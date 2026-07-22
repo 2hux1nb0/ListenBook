@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ListenLeap - 后台管理</title>
+  <link rel="icon" type="image/svg+xml" href="../images/logo.svg">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></noscript>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap"></noscript>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <div id="admin-app">
+    <!-- Sidebar -->
+    <aside class="admin-sidebar" id="adminSidebar">
+      <div class="admin-sidebar-top">
+        <div class="admin-logo">
+          <img src="../images/logo.svg" alt="ListenLeap" class="admin-logo-img">
+          <span class="admin-logo-text">ListenLeap</span>
+        </div>
+        <span class="admin-badge">管理后台</span>
+      </div>
+      <nav class="admin-nav">
+        <a href="#" class="admin-nav-item active" data-page="dashboard">
+          <i class="fas fa-th-large"></i>
+          <span>仪表盘</span>
+        </a>
+        <a href="#" class="admin-nav-item" data-page="podcasts">
+          <i class="fas fa-podcast"></i>
+          <span>播客管理</span>
+        </a>
+        <a href="#" class="admin-nav-item" data-page="episodes">
+          <i class="fas fa-list-ol"></i>
+          <span>节目管理</span>
+        </a>
+        <a href="#" class="admin-nav-item" data-page="categories">
+          <i class="fas fa-folder"></i>
+          <span>分类管理</span>
+        </a>
+        <a href="#" class="admin-nav-item" data-page="users">
+          <i class="fas fa-users"></i>
+          <span>用户管理</span>
+        </a>
+      </nav>
+      <div class="admin-sidebar-bottom">
+        <a href="#" class="admin-nav-item" id="adminThemeToggleBtn" title="切换深色/浅色主题">
+          <i class="fas fa-moon"></i>
+          <span>主题切换</span>
+        </a>
+        <a href="../index.html" class="admin-nav-item" target="_blank">
+          <i class="fas fa-external-link-alt"></i>
+          <span>查看前台</span>
+        </a>
+        <a href="http://localhost:8000/admin/" class="admin-nav-item" target="_blank">
+          <i class="fas fa-cog"></i>
+          <span>Django Admin</span>
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="admin-main">
+      <header class="admin-header">
+        <h1 class="admin-page-title" id="adminPageTitle">仪表盘</h1>
+        <div class="admin-header-right">
+          <span class="admin-user" id="adminUser">管理员</span>
+          <button class="admin-refresh-btn" onclick="loadCurrentPage()">
+            <i class="fas fa-sync-alt"></i> 刷新
+          </button>
+        </div>
+      </header>
+
+      <div class="admin-content" id="adminContent">
+        <!-- Dashboard View -->
+        <div id="dashboardView" class="admin-view active">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:linear-gradient(135deg,#5858f5,#7b7bf5)">
+                <i class="fas fa-podcast"></i>
+              </div>
+              <div class="stat-info">
+                <div class="stat-num" id="statTotalPodcasts">0</div>
+                <div class="stat-text">总播客数</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon" style="background:linear-gradient(135deg,#2ecc71,#27ae60)">
+                <i class="fas fa-list-ol"></i>
+              </div>
+              <div class="stat-info">
+                <div class="stat-num" id="statTotalEpisodes">0</div>
+                <div class="stat-text">总节目数</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon" style="background:linear-gradient(135deg,#f39c12,#e67e22)">
+                <i class="fas fa-folder"></i>
+              </div>
+              <div class="stat-info">
+                <div class="stat-num" id="statTotalCategories">0</div>
+                <div class="stat-text">分类数</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon" style="background:linear-gradient(135deg,#e74c3c,#c0392b)">
+                <i class="fas fa-users"></i>
+              </div>
+              <div class="stat-info">
+                <div class="stat-num" id="statTotalUsers">0</div>
+                <div class="stat-text">用户数</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-section">
+            <h3>📊 播客难度分布</h3>
+            <div class="difficulty-bars">
+              <div class="diff-bar">
+                <span class="diff-label">初级 🟢</span>
+                <div class="diff-track">
+                  <div class="diff-fill beginner" id="diffBeginner" style="width:0%"></div>
+                </div>
+                <span class="diff-num" id="diffBeginnerNum">0</span>
+              </div>
+              <div class="diff-bar">
+                <span class="diff-label">中级 🔵</span>
+                <div class="diff-track">
+                  <div class="diff-fill intermediate" id="diffIntermediate" style="width:0%"></div>
+                </div>
+                <span class="diff-num" id="diffIntermediateNum">0</span>
+              </div>
+              <div class="diff-bar">
+                <span class="diff-label">高级 🔴</span>
+                <div class="diff-track">
+                  <div class="diff-fill advanced" id="diffAdvanced" style="width:0%"></div>
+                </div>
+                <span class="diff-num" id="diffAdvancedNum">0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-section">
+            <h3>🕐 最近添加的播客</h3>
+            <div class="quick-list" id="recentPodcasts"></div>
+          </div>
+        </div>
+
+        <!-- Podcasts View -->
+        <div id="podcastsView" class="admin-view">
+          <div class="admin-toolbar">
+            <div class="toolbar-left">
+              <input type="text" class="admin-search" id="podcastSearch" placeholder="搜索播客...">
+              <select class="admin-filter" id="podcastDifficultyFilter">
+                <option value="">全部难度</option>
+                <option value="beginner">初级</option>
+                <option value="intermediate">中级</option>
+                <option value="advanced">高级</option>
+              </select>
+              <select class="admin-filter" id="podcastStatusFilter">
+                <option value="">全部状态</option>
+                <option value="active">已上架</option>
+                <option value="inactive">已下架</option>
+              </select>
+            </div>
+            <button class="admin-btn admin-btn-primary" onclick="openPodcastModal()">
+              <i class="fas fa-plus"></i> 添加播客
+            </button>
+          </div>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th width="60">封面</th>
+                  <th>标题</th>
+                  <th>作者</th>
+                  <th width="100">分类</th>
+                  <th width="80">难度</th>
+                  <th width="70">节目数</th>
+                  <th width="80">推荐</th>
+                  <th width="80">状态</th>
+                  <th width="160">操作</th>
+                </tr>
+              </thead>
+              <tbody id="podcastTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Episodes View -->
+        <div id="episodesView" class="admin-view">
+          <div class="admin-toolbar">
+            <div class="toolbar-left">
+              <input type="text" class="admin-search" id="episodeSearch" placeholder="搜索节目...">
+              <select class="admin-filter" id="episodePodcastFilter">
+                <option value="">全部播客</option>
+              </select>
+              <select class="admin-filter" id="episodeStatusFilter">
+                <option value="">全部状态</option>
+                <option value="active">已上架</option>
+                <option value="inactive">已下架</option>
+              </select>
+            </div>
+            <button class="admin-btn admin-btn-primary" onclick="openEpisodeModal()">
+              <i class="fas fa-plus"></i> 添加节目
+            </button>
+          </div>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>标题</th>
+                  <th width="130">所属播客</th>
+                  <th width="80">时长</th>
+                  <th width="70">集号</th>
+                  <th width="60">播放</th>
+                  <th width="80">状态</th>
+                  <th width="160">操作</th>
+                </tr>
+              </thead>
+              <tbody id="episodeTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Categories View -->
+        <div id="categoriesView" class="admin-view">
+          <div class="admin-toolbar">
+            <div class="toolbar-left">
+              <input type="text" class="admin-search" id="categorySearch" placeholder="搜索分类...">
+            </div>
+            <button class="admin-btn admin-btn-primary" onclick="openCategoryModal()">
+              <i class="fas fa-plus"></i> 添加分类
+            </button>
+          </div>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th width="60">颜色</th>
+                  <th>名称</th>
+                  <th width="100">Slug</th>
+                  <th width="80">图标</th>
+                  <th width="70">排序</th>
+                  <th width="80">状态</th>
+                  <th width="140">操作</th>
+                </tr>
+              </thead>
+              <tbody id="categoryTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Users View -->
+        <div id="usersView" class="admin-view">
+          <div class="admin-toolbar">
+            <div class="toolbar-left">
+              <input type="text" class="admin-search" id="userSearch" placeholder="搜索用户...">
+            </div>
+          </div>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>用户名</th>
+                  <th>邮箱</th>
+                  <th width="70">职员</th>
+                  <th width="80">状态</th>
+                  <th width="120">注册时间</th>
+                </tr>
+              </thead>
+              <tbody id="userTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Podcast Modal -->
+  <div class="modal-overlay" id="podcastModal">
+    <div class="modal-content admin-modal">
+      <button class="modal-close" onclick="closeModal('podcastModal')"><i class="fas fa-times"></i></button>
+      <h2 class="modal-title" id="podcastModalTitle">添加播客</h2>
+      <form id="podcastForm" onsubmit="savePodcast(event)">
+        <input type="hidden" id="podcastId">
+        <div class="form-row">
+          <div class="form-group">
+            <label>标题 *</label>
+            <input type="text" id="podcastTitle" required>
+          </div>
+          <div class="form-group">
+            <label>作者</label>
+            <input type="text" id="podcastAuthor">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <textarea id="podcastDesc" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label>封面图片</label>
+          <div class="cover-upload-wrap" style="display:flex;gap:12px;align-items:flex-start">
+            <div class="cover-upload-area" style="flex:1;display:flex;flex-direction:column;gap:8px">
+              <input type="text" id="podcastCover" placeholder="输入图片URL地址" style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:8px;font-size:14px;outline:none">
+              <div style="display:flex;align-items:center;gap:10px;color:var(--text-muted);font-size:12px">
+                <span>或</span>
+                <label for="podcastCoverFile" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:var(--bg-light);border:1px dashed var(--border-color-dark);border-radius:8px;cursor:pointer;font-size:13px;color:var(--main-blue);font-weight:500;transition:all 0.2s" onmouseover="this.style.borderColor='var(--main-blue)';this.style.background='rgba(88,88,245,0.04)'" onmouseout="this.style.borderColor='var(--border-color-dark)';this.style.background='var(--bg-light)'">
+                  <i class="fas fa-cloud-upload-alt"></i> 本地上传图片
+                </label>
+                <input type="file" id="podcastCoverFile" accept="image/*" style="display:none">
+              </div>
+            </div>
+          </div>
+          <div class="cover-preview" id="podcastCoverPreview"></div>
+          <small style="color:var(--text-muted);font-size:11px;margin-top:4px;display:block">支持填写URL地址，或点击"本地上传图片"选择本地文件</small>
+        </div>
+        <div class="form-row form-row-3">
+          <div class="form-group">
+            <label>分类 *</label>
+            <select id="podcastCategory" required></select>
+          </div>
+          <div class="form-group">
+            <label>难度 *</label>
+            <select id="podcastDifficulty" required>
+              <option value="beginner">初级</option>
+              <option value="intermediate" selected>中级</option>
+              <option value="advanced">高级</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>语言</label>
+            <select id="podcastLanguage">
+              <option value="en">English</option>
+              <option value="zh">中文</option>
+              <option value="ja">日本語</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>推荐</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="podcastFeatured">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label>上架</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="podcastActive" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="admin-btn admin-btn-secondary" onclick="closeModal('podcastModal')">取消</button>
+          <button type="submit" class="admin-btn admin-btn-primary" id="podcastSaveBtn">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Episode Modal -->
+  <div class="modal-overlay" id="episodeModal">
+    <div class="modal-content admin-modal">
+      <button class="modal-close" onclick="closeModal('episodeModal')"><i class="fas fa-times"></i></button>
+      <h2 class="modal-title" id="episodeModalTitle">添加节目</h2>
+      <form id="episodeForm" onsubmit="saveEpisode(event)">
+        <input type="hidden" id="episodeId">
+        <div class="form-group">
+          <label>所属播客 *</label>
+          <select id="episodePodcast" required></select>
+        </div>
+        <div class="form-group">
+          <label>标题 *</label>
+          <input type="text" id="episodeTitle" required>
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <textarea id="episodeDesc" rows="2"></textarea>
+        </div>
+        <div class="form-row form-row-3">
+          <div class="form-group">
+            <label>时长（秒）</label>
+            <input type="number" id="episodeDuration" placeholder="1200" min="0">
+          </div>
+          <div class="form-group">
+            <label>集号</label>
+            <input type="number" id="episodeNumber" min="0" value="0">
+          </div>
+          <div class="form-group">
+            <label>发布日期</label>
+            <input type="date" id="episodePublishDate">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>音频 URL</label>
+          <input type="text" id="episodeAudioUrl" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label>英语字幕</label>
+          <textarea id="episodeSubEn" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label>中文翻译</label>
+          <textarea id="episodeSubZh" rows="3"></textarea>
+        </div>
+        <label class="toggle-switch" style="margin-bottom:16px;display:inline-flex;align-items:center;gap:10px">
+          <input type="checkbox" id="episodeActive" checked>
+          <span class="toggle-slider"></span>
+          <span>已上架</span>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="admin-btn admin-btn-secondary" onclick="closeModal('episodeModal')">取消</button>
+          <button type="submit" class="admin-btn admin-btn-primary" id="episodeSaveBtn">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Category Modal -->
+  <div class="modal-overlay" id="categoryModal">
+    <div class="modal-content admin-modal admin-modal-sm">
+      <button class="modal-close" onclick="closeModal('categoryModal')"><i class="fas fa-times"></i></button>
+      <h2 class="modal-title" id="categoryModalTitle">添加分类</h2>
+      <form id="categoryForm" onsubmit="saveCategory(event)">
+        <input type="hidden" id="categoryId">
+        <div class="form-group">
+          <label>名称 *</label>
+          <input type="text" id="categoryName" required>
+        </div>
+        <div class="form-group">
+          <label>Slug *</label>
+          <input type="text" id="categorySlug" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>图标 (Font Awesome)</label>
+            <input type="text" id="categoryIcon" placeholder="fa-newspaper">
+          </div>
+          <div class="form-group">
+            <label>颜色</label>
+            <input type="color" id="categoryColor" value="#5858f5" style="width:60px;height:40px">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>排序</label>
+          <input type="number" id="categorySortOrder" value="0" min="0">
+        </div>
+        <label class="toggle-switch" style="margin-bottom:16px;display:inline-flex;align-items:center;gap:10px">
+          <input type="checkbox" id="categoryActive" checked>
+          <span class="toggle-slider"></span>
+          <span>已激活</span>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="admin-btn admin-btn-secondary" onclick="closeModal('categoryModal')">取消</button>
+          <button type="submit" class="admin-btn admin-btn-primary" id="categorySaveBtn">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Confirm Modal -->
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal-content admin-modal admin-modal-sm">
+      <h2 class="modal-title">确认操作</h2>
+      <p id="confirmMessage" style="margin-bottom:20px;color:var(--text-secondary)"></p>
+      <div class="modal-actions">
+        <button class="admin-btn admin-btn-secondary" onclick="closeModal('confirmModal')">取消</button>
+        <button class="admin-btn admin-btn-danger" id="confirmBtn">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="adminToast" class="admin-toast"></div>
+
+  <script src="admin.js"></script>
+</body>
+</html>
