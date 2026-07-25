@@ -1,4 +1,4 @@
-// ===== ListenLeap API Client =====
+// ===== ListenBook API Client =====
 
 const API_BASE = (() => {
   const host = window.location.hostname || 'localhost';

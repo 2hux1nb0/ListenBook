@@ -1,6 +1,6 @@
 'use strict';
 /* ═══════════════════════════════════════════════════════════════
-   ListenLeap Admin Studio — app.js
+   ListenBook Admin Studio — app.js
    Pure vanilla JS · No build step · Django Same-Origin API
 ═══════════════════════════════════════════════════════════════ */
 

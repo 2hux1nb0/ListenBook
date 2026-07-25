@@ -1,4 +1,4 @@
-// ===== ListenLeap App Logic =====
+// ===== ListenBook App Logic =====
 
 // State
 let currentCategory = 'all';

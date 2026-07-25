@@ -1,4 +1,4 @@
-# ListenLeap 全栈架构设计文档
+# ListenBook 全栈架构设计文档
 
 ## 1. 技术栈概览
 

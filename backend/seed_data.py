@@ -1,5 +1,5 @@
 """
-Seed data script for ListenLeap.
+Seed data script for ListenBook.
 Run: python3 manage.py shell < seed_data.py
 """
 import os

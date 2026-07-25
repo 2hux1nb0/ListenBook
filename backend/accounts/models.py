@@ -3,7 +3,7 @@ from django.contrib.auth.models import AbstractUser
 
 
 class User(AbstractUser):
-    """Custom User model for ListenLeap."""
+    """Custom User model for ListenBook."""
     nickname = models.CharField(max_length=100, blank=True, default='')
     avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
     bio = models.TextField(blank=True, default='')

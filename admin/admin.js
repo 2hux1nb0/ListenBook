@@ -1,4 +1,4 @@
-// ===== ListenLeap Admin Dashboard =====
+// ===== ListenBook Admin Dashboard =====
 const API_BASE = (() => {
   const host = window.location.hostname || 'localhost';
   if (host === 'listenbook.local' || host === 'localhost' || host === '127.0.0.1') {

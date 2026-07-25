@@ -1,4 +1,4 @@
-// ===== ListenLeap Podcast Data =====
+// ===== ListenBook Podcast Data =====
 // 模拟播客数据，包含各类别、难度级别的播客节目
 
 var PODCAST_DATA = [

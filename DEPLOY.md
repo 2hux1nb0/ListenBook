@@ -1,4 +1,4 @@
-# ListenLeap 部署指南（Ubuntu 服务器）
+# ListenBook 部署指南（Ubuntu 服务器）
 
 ## 一、服务器要求
 
@@ -89,7 +89,7 @@ python seed_data.py
 # 8. 创建 Gunicorn systemd 服务
 sudo cat > /etc/systemd/system/listenleap.service << 'EOF'
 [Unit]
-Description=ListenLeap Django Backend
+Description=ListenBook Django Backend
 After=network.target postgresql.service
 
 [Service]

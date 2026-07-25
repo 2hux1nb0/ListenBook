@@ -1,5 +1,5 @@
 """
-ListenLeap Backend Settings
+ListenBook Backend Settings
 """
 import os
 from pathlib import Path
