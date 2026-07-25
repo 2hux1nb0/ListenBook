@@ -5,6 +5,7 @@ from .models import PlayHistory
 class PlayHistorySerializer(serializers.ModelSerializer):
     episode_title = serializers.CharField(source='episode.title', read_only=True)
     podcast_title = serializers.CharField(source='episode.podcast.title', read_only=True)
+    podcast_id = serializers.IntegerField(source='episode.podcast.id', read_only=True)
 
     class Meta:
         model = PlayHistory

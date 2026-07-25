@@ -53,6 +53,10 @@ urlpatterns = [
     path('api/', include('playback.urls')),
     path('api/', include('favorites.urls')),
     path('api/', include('notes.urls')),
+    path('api/', include('membership.urls')),
+    path('api/', include('vocabulary.urls')),
+    path('api/', include('ai.urls')),
+    path('api/', include('shadowing.urls')),
     path('', serve_frontend, name='frontend_root'),
 ]
 

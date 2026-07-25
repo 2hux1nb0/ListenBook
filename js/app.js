@@ -1,5 +1,23 @@
 // ===== ListenBook App Logic =====
 
+// ===== Global error surfacing (so silent failures become visible) =====
+function showFatalError(msg) {
+  try {
+    let b = document.getElementById('__errBanner');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = '__errBanner';
+      b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#c0392b;color:#fff;font:12px/1.5 monospace;padding:10px 14px;white-space:pre-wrap;max-height:42vh;overflow:auto;box-shadow:0 -2px 12px rgba(0,0,0,.35)';
+      (document.body || document.documentElement).appendChild(b);
+    }
+    b.textContent += String(msg) + '\n';
+  } catch (e) { /* last resort */ }
+}
+try {
+  window.addEventListener('error', e => showFatalError('ERR: ' + (e.error ? (e.error.stack || e.error.message) : e.message)));
+  window.addEventListener('unhandledrejection', e => showFatalError('PROMISE: ' + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason)));
+} catch (e) {}
+
 // State
 let currentCategory = 'all';
 let currentPage = 'home';
@@ -18,6 +36,22 @@ let transcriptLines = [];
 let transcriptMode = 'bilingual';
 let lastActiveLineIdx = -1;
 
+// ===== Membership / Vocabulary / AI / Shadowing state =====
+let currentTiers = [];
+let currentMembership = null;
+let currentFeatures = [];
+let billingPeriod = 'monthly';
+let paymentTierSlug = null;
+let paymentMethod = 'wechat';
+let userWords = [];
+let ytPlayer = null;
+let ytReady = false;
+let shadowRecorder = null;
+let shadowChunks = [];
+let shadowTimerId = null;
+let shadowStartTs = 0;
+let shadowTargetDuration = 0;
+
 // ===== DOM Elements =====
 const searchInput = document.getElementById('searchInput');
 let backendPodcasts = [];
@@ -29,6 +63,8 @@ const historyView = document.getElementById('historyView');
 const blogView = document.getElementById('blogView');
 const detailView = document.getElementById('detailView');
 const searchView = document.getElementById('searchView');
+const membershipView = document.getElementById('membershipView');
+const vocabView = document.getElementById('vocabView');
 const backBtn = document.getElementById('backBtn');
 const audioPlayer = document.getElementById('audioPlayer');
 
@@ -42,6 +78,8 @@ const views = {
   blog: blogView,
   detail: detailView,
   search: searchView,
+  membership: membershipView,
+  vocab: vocabView,
 };
 
 // ===== Downlisted podcast tracking =====
@@ -88,8 +126,9 @@ async function syncDownlistedPodcasts() {
 
 // ===== Initialize =====
 document.addEventListener('DOMContentLoaded', async () => {
-  await syncDownlistedPodcasts();
-  await loadBackendPodcasts();
+  // Background loads — NON-blocking so nav always wires up even if the backend is slow/unreachable
+  syncDownlistedPodcasts().catch(e => showFatalError('syncDownlistedPodcasts: ' + (e && e.message)));
+  loadBackendPodcasts().then(() => { try { renderHome(); } catch (e) {} }).catch(e => showFatalError('loadBackendPodcasts: ' + (e && e.message)));
 
   // Clear any autofilled values from the search input
   // (Chrome hard-refresh ignores autocomplete="off" and fills saved emails)
@@ -113,8 +152,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSidebar();
   initAuth();
   initPlayer();
+  initShadow();
+  initWordPopover();
   initCategoriesPage();
+  setupBillingToggle();
+  setupPaymentModal();
   updateUserUI();
+  if (isLoggedIn()) { fetchMembership(); loadWords(); }
   loadFavoritesFromStorage();
 });
 
@@ -193,6 +237,11 @@ function navigateTo(page) {
     renderNotesPage();
   } else if (page === 'history') {
     renderHistoryPage();
+  } else if (page === 'membership') {
+    renderMembershipPage();
+  } else if (page === 'vocab') {
+    if (!isLoggedIn()) { showAuthModal('login'); return; }
+    renderVocabPage();
   }
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -404,6 +453,7 @@ function initBackButton() {
 // ===== Search =====
 function initSearch() {
   let searchTimer;
+  if (!searchInput) { console.warn('initSearch: #searchInput not found'); return; }
 
   searchInput.addEventListener('input', (e) => {
     // Ignore auto-fill events that look like emails
@@ -491,6 +541,7 @@ function initPlayer() {
     audioPlayer.pause();
     audioPlayer.src = '';
     audioPlayer.currentTime = 0;
+    unloadYouTube();
     document.getElementById('playerBar').style.display = 'none';
     syncPlayButtonState();
   });
@@ -523,6 +574,11 @@ function initPlayer() {
 
   const transcriptBtn = document.getElementById('playerTranscriptBtn');
   if (transcriptBtn) transcriptBtn.addEventListener('click', openTranscript);
+  const shadowBtn = document.getElementById('playerShadowBtn');
+  if (shadowBtn) shadowBtn.addEventListener('click', () => {
+    if (!isLoggedIn()) { showAuthModal('login'); return; }
+    openShadow(lastActiveLineIdx >= 0 ? lastActiveLineIdx : 0);
+  });
   const transcriptModalClose = document.getElementById('transcriptModalClose');
   if (transcriptModalClose) transcriptModalClose.addEventListener('click', () => {
     document.getElementById('transcriptModal').style.display = 'none';
@@ -696,6 +752,7 @@ function playPodcast(podcastId) {
 }
 
 async function playEpisode(podcastId, episodeIndex) {
+  unloadYouTube();
   const podcast = getVisiblePodcasts().find(p => String(p.id) === String(podcastId));
   if (!podcast) return;
 
@@ -753,6 +810,14 @@ async function playEpisode(podcastId, episodeIndex) {
     episodeItems.forEach((item, idx) => {
       item.classList.toggle('playing', idx === episodeIndex);
     });
+  }
+
+  // YouTube content: embed player instead of audio
+  if (episode && episode.youtube_id) {
+    document.getElementById('playerDuration').textContent = 'YouTube';
+    document.getElementById('playerProgress').style.width = '0%';
+    loadYouTube(episode.youtube_id, 0);
+    return;
   }
 
   if (episodeAudioUrl) {
@@ -868,7 +933,24 @@ function playNextEpisode() {
   }
 }
 
+function getCurrentPlayTime() {
+  if (ytPlayer && ytPlayer.getCurrentTime) {
+    try { return ytPlayer.getCurrentTime(); } catch (e) {}
+  }
+  return audioPlayer.currentTime || 0;
+}
+
 function updatePlayerProgress() {
+  if (ytPlayer && ytPlayer.getDuration) {
+    try {
+      const d = ytPlayer.getDuration();
+      const t = ytPlayer.getCurrentTime();
+      document.getElementById('playerCurrentTime').textContent = formatTime(t);
+      if (d) document.getElementById('playerProgress').style.width = Math.min(100, (t / d) * 100) + '%';
+    } catch (e) {}
+    highlightTranscript();
+    return;
+  }
   const duration = Number.isFinite(audioPlayer.duration) && audioPlayer.duration > 0 ? audioPlayer.duration : 0;
   if (duration) {
     const progress = (audioPlayer.currentTime / duration) * 100;
@@ -944,27 +1026,68 @@ function setTranscriptMode(mode) {
   renderTranscript();
 }
 
+function renderClickableWords(text) {
+  const escaped = esc(text);
+  return escaped.split(/(\s+)/).map(tok => {
+    if (/^\s+$/.test(tok)) return tok;
+    const word = tok.replace(/[^A-Za-z']/g, '').toLowerCase();
+    if (!word) return tok;
+    return `<span class="transcript-word" data-word="${word}">${tok}</span>`;
+  }).join('');
+}
+
 function renderTranscript() {
   const body = document.getElementById('transcriptBody');
   if (!transcriptLines.length) {
     body.innerHTML = '<div class="transcript-empty"><i class="fas fa-file-lines"></i><p>本节目暂无字幕 / 文稿</p></div>';
     return;
   }
-  body.innerHTML = transcriptLines.map((line, idx) => `
-    <div class="transcript-line ${idx === lastActiveLineIdx ? 'active' : ''}" data-idx="${idx}" onclick="seekTranscriptLine(${idx})">
-      ${line.time != null ? `<span class="transcript-time">${formatTime(line.time)}</span>` : ''}
-      <div class="transcript-text">
-        ${transcriptMode !== 'zh' && line.en ? `<div class="transcript-en">${esc(line.en)}</div>` : ''}
-        ${transcriptMode !== 'en' && line.zh ? `<div class="transcript-zh">${esc(line.zh)}</div>` : ''}
-      </div>
-    </div>`).join('');
+  body.innerHTML = transcriptLines.map((line, idx) => {
+    const enHtml = (transcriptMode !== 'zh' && line.en) ? `<div class="transcript-en">${renderClickableWords(line.en)}</div>` : '';
+    const zhHtml = (transcriptMode !== 'en' && line.zh) ? `<div class="transcript-zh">${esc(line.zh)}</div>` : '';
+    const timeHtml = line.time != null ? `<span class="transcript-time" data-seek="${idx}">${formatTime(line.time)}</span>` : '';
+    const locked = !hasFeature('ai_explain');
+    return `
+      <div class="transcript-line ${idx === lastActiveLineIdx ? 'active' : ''}" data-idx="${idx}">
+        ${timeHtml}
+        <div class="transcript-text">
+          ${enHtml}
+          ${zhHtml}
+        </div>
+        <div class="transcript-actions">
+          <button class="transcript-act" data-explain="${idx}" ${locked ? 'disabled title="会员功能"' : ''}><i class="fas fa-brain"></i> 讲解</button>
+          <button class="transcript-act" data-shadow="${idx}" ${locked ? 'disabled title="会员功能"' : ''}><i class="fas fa-microphone"></i> 跟读</button>
+        </div>
+        <div class="transcript-explain" id="explain-${idx}" style="display:none"></div>
+      </div>`;
+  }).join('');
+
+  body.querySelectorAll('.transcript-time').forEach(el => {
+    el.addEventListener('click', (e) => { e.stopPropagation(); seekTranscriptLine(Number(el.dataset.seek)); });
+  });
+  body.querySelectorAll('.transcript-act[data-explain]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = Number(btn.dataset.explain);
+      const box = document.getElementById('explain-' + idx);
+      if (box.style.display === 'none') { box.style.display = 'block'; explainLine(idx, box); }
+      else { box.style.display = 'none'; }
+    });
+  });
+  body.querySelectorAll('.transcript-act[data-shadow]').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openShadow(Number(btn.dataset.shadow)); });
+  });
 }
 
 function seekTranscriptLine(idx) {
   const line = transcriptLines[idx];
-  if (line && line.time != null && audioPlayer.duration) {
-    audioPlayer.currentTime = line.time;
-    if (audioPlayer.paused) audioPlayer.play().catch(() => {});
+  if (line && line.time != null) {
+    if (ytPlayer && ytPlayer.seekTo) {
+      ytPlayer.seekTo(line.time, true);
+    } else if (audioPlayer.duration) {
+      audioPlayer.currentTime = line.time;
+      if (audioPlayer.paused) audioPlayer.play().catch(() => {});
+    }
   }
   document.querySelectorAll('.transcript-line').forEach(el => el.classList.remove('active'));
   const el = document.querySelector(`.transcript-line[data-idx="${idx}"]`);
@@ -979,7 +1102,7 @@ function highlightTranscript() {
   if (!transcriptLines.length) return;
   const modal = document.getElementById('transcriptModal');
   if (modal.style.display !== 'flex') return;
-  const t = audioPlayer.currentTime;
+  const t = getCurrentPlayTime();
   let active = -1;
   for (let i = 0; i < transcriptLines.length; i++) {
     if (transcriptLines[i].time != null && transcriptLines[i].time <= t) active = i;
@@ -1194,33 +1317,59 @@ function addToHistory(podcast, episodeIndex, episode) {
   }
 }
 
-function renderHistoryPage() {
+async function renderHistoryPage() {
   const list = document.getElementById('historyList');
   const empty = document.getElementById('historyEmpty');
 
   const stored = localStorage.getItem('playbackHistory');
-  playbackHistory = stored ? JSON.parse(stored) : [];
+  const localHistory = stored ? JSON.parse(stored) : [];
+  let mergedHistory = [...localHistory];
 
-  document.getElementById('statMinutes').textContent = playbackHistory.length * 15;
-  document.getElementById('statEpisodes').textContent = playbackHistory.length;
+  if (isLoggedIn()) {
+    try {
+      const data = await getPlaybackHistory();
+      const backendItems = (data.results || data || []).map(item => ({
+        podcastId: 'backend-' + item.podcast_id,
+        podcastTitle: item.podcast_title || '',
+        podcastCover: 'https://picsum.photos/seed/history/100/100',
+        episodeTitle: item.episode_title || '',
+        episodeIndex: 0,
+        duration: '',
+        timestamp: item.last_played || item.updated_at || new Date().toISOString(),
+        fromBackend: true,
+      }));
+      // Merge: backend first, then local items not already matched by episode+podcast
+      const matchKey = h => h.podcastTitle + '::' + h.episodeTitle;
+      const beKeys = new Set(backendItems.map(matchKey));
+      mergedHistory = [...backendItems, ...localHistory.filter(h => !beKeys.has(matchKey(h)))];
+    } catch (e) {
+      mergedHistory = localHistory;
+    }
+  }
+
+  playbackHistory = mergedHistory;
+
+  const displayed = mergedHistory.slice(0, 30);
+  document.getElementById('statMinutes').textContent = displayed.length * 15;
+  document.getElementById('statEpisodes').textContent = displayed.length;
   document.getElementById('statStreak').textContent = calculateStreak();
   document.getElementById('statGoal').textContent = 100;
 
-  if (playbackHistory.length === 0) {
+  if (displayed.length === 0) {
     list.innerHTML = '';
     empty.style.display = 'block';
     return;
   }
 
   empty.style.display = 'none';
-  list.innerHTML = playbackHistory.slice(0, 20).map(h => `
-    <div class="history-item" onclick="openDetail(${h.podcastId})">
+  list.innerHTML = displayed.map(h => `
+    <div class="history-item" onclick="openDetail('${esc(h.podcastId)}')">
       <div class="history-cover">
-        <img src="${h.podcastCover}" alt="" loading="lazy">
+        <img src="${esc(h.podcastCover)}" alt="" loading="lazy">
       </div>
       <div class="history-info">
-        <div class="history-title">${h.episodeTitle}</div>
-        <div class="history-podcast">${h.podcastTitle}</div>
+        <div class="history-title">${esc(h.episodeTitle)}</div>
+        <div class="history-podcast">${esc(h.podcastTitle)}</div>
       </div>
       <div class="history-time">${formatHistoryTime(h.timestamp)}</div>
     </div>
@@ -1347,6 +1496,11 @@ function initSidebar() {
         navigateTo('history');
       } else if (page === 'blog') {
         navigateTo('blog');
+      } else if (page === 'membership') {
+        navigateTo('membership');
+      } else if (page === 'vocab') {
+        if (!isLoggedIn()) { showAuthModal('login'); return; }
+        navigateTo('vocab');
       }
     });
   });
@@ -1476,6 +1630,8 @@ async function handleLogin() {
       document.getElementById('authModal').style.display = 'none';
       updateUserUI();
       loadFavoritesFromBackend();
+      fetchMembership();
+      loadWords();
       showToast('登录成功！');
     }
   } catch (error) {
@@ -1509,6 +1665,8 @@ async function handleRegister() {
     if (data && data.user) {
       document.getElementById('authModal').style.display = 'none';
       updateUserUI();
+      fetchMembership();
+      loadWords();
       showToast('注册成功！');
     }
   } catch (error) {
@@ -1531,11 +1689,539 @@ function handleLogout() {
 function updateUserUI() {
   const userBtnText = document.getElementById('userBtnText');
   const user = getCurrentUser();
+  const badge = document.getElementById('sidebarMemberBadge');
   if (user) {
     userBtnText.textContent = user.username;
+    if (badge && currentMembership && currentMembership.tier_detail) {
+      badge.style.display = 'inline-block';
+      badge.textContent = currentMembership.tier_detail.name;
+      badge.style.background = currentMembership.tier_detail.badge_color || '#5858f5';
+    } else if (badge) {
+      badge.style.display = 'none';
+    }
   } else {
     userBtnText.textContent = '登录';
+    if (badge) badge.style.display = 'none';
   }
+}
+
+// ===== Membership helpers =====
+function hasFeature(name) {
+  return Array.isArray(currentFeatures) && currentFeatures.includes(name);
+}
+
+async function fetchMembership() {
+  if (!isLoggedIn()) { currentMembership = null; currentFeatures = []; updateUserUI(); return; }
+  try {
+    const data = await getMembershipStatus();
+    currentMembership = data;
+    currentFeatures = data.features || [];
+  } catch (e) {
+    currentMembership = null;
+    currentFeatures = [];
+  }
+  updateUserUI();
+}
+
+async function renderMembershipPage() {
+ try {
+  const grid0 = document.getElementById('pricingGrid');
+  if (grid0 && !currentTiers.length) grid0.innerHTML = '<p class="empty-hint">会员套餐加载中…</p>';
+  await ensureTiers();
+  const cur = document.getElementById('membershipCurrent');
+  if (currentMembership && currentMembership.is_active && currentMembership.tier_detail) {
+    const t = currentMembership.tier_detail;
+    const exp = currentMembership.expires_at ? new Date(currentMembership.expires_at).toLocaleDateString('zh-CN') : '长期';
+    cur.innerHTML = `
+      <div class="member-card" style="border-color:${t.badge_color}">
+        <div class="member-card-badge" style="background:${t.badge_color}">${esc(t.name)}</div>
+        <div class="member-card-info">
+          <p>当前会员：<strong>${esc(t.name)}</strong></p>
+          <p>到期时间：${exp}</p>
+          <p class="member-features">已解锁：${t.features.map(f => esc(featureLabel(f))).join('、')}</p>
+        </div>
+        <button class="auth-submit-btn secondary" id="cancelMemberBtn">取消自动续费</button>
+      </div>`;
+    const cb = document.getElementById('cancelMemberBtn');
+    if (cb) cb.addEventListener('click', async () => {
+      await cancelMembership();
+      await fetchMembership();
+      renderMembershipPage();
+      showToast('已取消自动续费');
+    });
+  } else {
+    cur.innerHTML = `<div class="member-card free">
+      <div class="member-card-badge" style="background:#95a5a6">免费版</div>
+      <div class="member-card-info"><p>你当前使用的是免费版，开通会员解锁 AI 智能讲解、AI 跟读评分等核心功能。</p></div>
+    </div>`;
+  }
+  // update yearly savings badge from tiers
+  const saveEl = document.getElementById('billingSave');
+  if (saveEl && currentTiers.length) {
+    const paid = currentTiers.find(t => t.slug !== 'free');
+    if (paid && Number(paid.price_monthly) > 0) {
+      const save = Math.round((1 - Number(paid.price_yearly) / (Number(paid.price_monthly) * 12)) * 100);
+      if (save > 0) saveEl.textContent = `省 ${save}%`;
+    }
+  }
+  renderPricingInto('pricingGrid');
+ } catch (e) {
+    const cur = document.getElementById('membershipCurrent');
+    if (cur) cur.innerHTML = '<div class="empty-state"><p>会员页渲染出错：' + esc(String((e && e.message) || e)) + '</p></div>';
+    showFatalError('renderMembershipPage: ' + (e && e.stack || e));
+  }
+}
+
+async function ensureTiers() {
+  if (currentTiers.length) return currentTiers;
+  try {
+    const data = await Promise.race([
+      getTiers(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('tiers request timeout')), 5000))
+    ]);
+    currentTiers = data.results || data || [];
+  } catch (e) { currentTiers = []; }
+  return currentTiers;
+}
+
+function featureLabel(f) {
+  const map = {
+    basic_player: '基础播放', transcript: '双语字幕', translation: '中文翻译', notes: '学习笔记',
+    favorites: '收藏关注', history: '播放历史', vocabulary: '生词本', ai_explain: 'AI 智能讲解',
+    shadowing: 'AI 跟读', hd_audio: '高清音质', all_content: '全部内容', no_ads: '免广告',
+    offline: '离线下载', priority_support: '优先支持',
+  };
+  return map[f] || f;
+}
+
+function renderPricingInto(containerId) {
+  const grid = document.getElementById(containerId);
+  if (!grid) return;
+  if (!currentTiers.length) { grid.innerHTML = '<div class="empty-state"><p>会员套餐加载失败</p><p class="empty-hint">请检查网络后重试</p><button class="auth-submit-btn" id="retryTiersBtn">重试</button></div>'; const rb = document.getElementById('retryTiersBtn'); if (rb) rb.addEventListener('click', async () => { currentTiers = []; await ensureTiers(); renderPricingInto(containerId); }); return; }
+  const mySlug = (currentMembership && currentMembership.is_active && currentMembership.tier_detail) ? currentMembership.tier_detail.slug : 'free';
+  grid.innerHTML = currentTiers.map(t => {
+    const isMine = t.slug === mySlug;
+    const isPopular = t.slug === 'pro';
+    const disabled = isMine || t.slug === 'free';
+    let price, perLabel, note = '';
+    if (t.slug === 'free') {
+      price = '0'; perLabel = '';
+    } else if (billingPeriod === 'yearly') {
+      price = t.price_yearly; perLabel = '/年';
+      note = `约合 ¥${(Number(t.price_yearly) / 12).toFixed(0)}/月`;
+    } else {
+      price = t.price_monthly; perLabel = '/月';
+    }
+    const btnLabel = isMine ? '当前方案' : (t.slug === 'free' ? '免费使用' : '立即开通');
+    return `
+      <div class="pricing-card ${isPopular ? 'popular' : ''} ${isMine ? 'current' : ''}" style="--tier-color:${t.badge_color}">
+        ${isPopular ? '<div class="pricing-badge">最受欢迎</div>' : ''}
+        <div class="pricing-name">${esc(t.name)}</div>
+        <div class="pricing-price"><span class="cur">¥</span><span class="amount">${price}</span><span class="per">${perLabel}</span></div>
+        ${note ? `<div class="pricing-period-note">${note}</div>` : '<div class="pricing-period-note">&nbsp;</div>'}
+        <ul class="pricing-features">
+          ${t.features.map(f => `<li><i class="fas fa-check"></i>${esc(featureLabel(f))}</li>`).join('')}
+        </ul>
+        <button class="pricing-btn" data-tier="${t.slug}" ${disabled ? 'disabled' : ''}>${btnLabel}</button>
+      </div>`;
+  }).join('');
+  grid.querySelectorAll('.pricing-btn').forEach(btn => {
+    btn.addEventListener('click', () => openPricing(btn.dataset.tier));
+  });
+}
+
+function openPricing(tierSlug) {
+  if (!tierSlug || tierSlug === 'free') return;
+  if (!isLoggedIn()) { showAuthModal('login'); return; }
+  const tier = currentTiers.find(t => t.slug === tierSlug);
+  if (!tier) return;
+  showPaymentModal(tierSlug);
+}
+
+function setupBillingToggle() {
+  const toggle = document.getElementById('billingToggle');
+  if (!toggle || toggle.dataset.wired) return;
+  toggle.dataset.wired = '1';
+  toggle.querySelectorAll('.billing-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      billingPeriod = btn.dataset.period;
+      toggle.querySelectorAll('.billing-opt').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderPricingInto('pricingGrid');
+    });
+  });
+}
+
+function showPaymentModal(tierSlug) {
+  const tier = currentTiers.find(t => t.slug === tierSlug);
+  if (!tier) return;
+  paymentTierSlug = tierSlug;
+  paymentMethod = 'wechat';
+  const body = document.getElementById('payBody');
+  if (body) body.style.display = '';
+  const price = billingPeriod === 'yearly' ? Number(tier.price_yearly) : Number(tier.price_monthly);
+  const perLabel = billingPeriod === 'yearly' ? '年' : '月';
+  const perMonth = billingPeriod === 'yearly' ? (Number(tier.price_yearly) / 12).toFixed(0) : Number(tier.price_monthly).toFixed(0);
+  const order = document.getElementById('payOrder');
+  order.innerHTML = `
+    <div class="pay-order-row"><span>会员方案</span><span>${esc(tier.name)}</span></div>
+    <div class="pay-order-row"><span>计费周期</span><span>${billingPeriod === 'yearly' ? '年付' : '月付'}</span></div>
+    <div class="pay-order-row total"><span>应付金额</span><span class="pay-amount">¥${price}</span></div>
+    <div class="pay-order-row" style="font-size:12px;color:var(--text-muted)"><span></span><span>约合 ¥${perMonth}/${perLabel}</span></div>`;
+  document.querySelectorAll('#payMethods .pay-method').forEach(m => {
+    m.classList.toggle('active', m.dataset.method === 'wechat');
+  });
+  const btn = document.getElementById('payConfirmBtn');
+  if (btn) { btn.disabled = false; btn.style.display = ''; btn.textContent = `确认支付 ¥${price}`; }
+  const modal = document.getElementById('paymentModal');
+  modal.style.display = 'flex';
+}
+
+function setupPaymentModal() {
+  const modal = document.getElementById('paymentModal');
+  const close = document.getElementById('paymentModalClose');
+  if (close) close.addEventListener('click', () => { modal.style.display = 'none'; });
+  if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+  document.querySelectorAll('#payMethods .pay-method').forEach(m => {
+    m.addEventListener('click', () => {
+      document.querySelectorAll('#payMethods .pay-method').forEach(x => x.classList.remove('active'));
+      m.classList.add('active');
+      paymentMethod = m.dataset.method;
+    });
+  });
+  const btn = document.getElementById('payConfirmBtn');
+  if (btn) btn.addEventListener('click', submitPayment);
+}
+
+async function submitPayment() {
+  if (!paymentTierSlug) return;
+  const btn = document.getElementById('payConfirmBtn');
+  const body = document.getElementById('payBody');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 支付处理中…';
+  await new Promise(r => setTimeout(r, 1500));
+  try {
+    const res = await subscribeMembership(paymentTierSlug, billingPeriod, paymentMethod);
+    if (res && res.membership) {
+      currentMembership = res.membership;
+      currentFeatures = res.membership.features || [];
+      updateUserUI();
+      if (body) body.style.display = 'none';
+      showPaySuccess(res.membership);
+      renderMembershipPage();
+    } else {
+      throw new Error('开通失败');
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerHTML = '确认支付';
+    showToast((e && e.detail) || '支付失败，请重试');
+  }
+}
+
+function showPaySuccess(membership) {
+  const content = document.querySelector('#paymentModal .modal-content');
+  let box = document.getElementById('payResult');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'payResult';
+    box.className = 'pay-success';
+    content.appendChild(box);
+  }
+  const tierName = (membership.tier_detail && membership.tier_detail.name) || '会员';
+  const orderId = membership.order_id || '';
+  box.innerHTML = `
+    <div class="pay-success-icon"><i class="fas fa-check"></i></div>
+    <div class="pay-success-title">开通成功！</div>
+    <div class="pay-success-sub">${esc(tierName)} 已激活，立即享受全部学习功能</div>
+    ${orderId ? `<div class="pay-success-sub" style="font-size:11px">订单号：${esc(orderId)}</div>` : ''}`;
+  showToast('会员开通成功！' + tierName);
+  setTimeout(() => {
+    const modal = document.getElementById('paymentModal');
+    if (modal) modal.style.display = 'none';
+    if (box) box.remove();
+  }, 1400);
+}
+
+async function loadWords() {
+  if (!isLoggedIn()) { userWords = []; return; }
+  try {
+    const data = await getWords();
+    userWords = data.results || data || [];
+  } catch (e) { userWords = []; }
+}
+
+async function renderVocabPage() {
+  await loadWords();
+  const list = document.getElementById('vocabList');
+  const empty = document.getElementById('vocabEmpty');
+  if (!userWords.length) {
+    list.innerHTML = ''; empty.style.display = 'block'; return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = userWords.map(w => `
+    <div class="vocab-card" data-id="${w.id}">
+      <div class="vocab-main">
+        <div class="vocab-term">${esc(w.term)} <span class="vocab-pos">${esc(w.pos || '')}</span></div>
+        <div class="vocab-def">${esc(w.definition || '')}</div>
+        ${w.example ? `<div class="vocab-example">${esc(w.example)}</div>` : ''}
+        ${w.episode_title ? `<div class="vocab-src">来自：${esc(w.episode_title)}</div>` : ''}
+      </div>
+      <button class="vocab-del" data-id="${w.id}" title="删除"><i class="fas fa-trash"></i></button>
+    </div>`).join('');
+  list.querySelectorAll('.vocab-del').forEach(b => {
+    b.addEventListener('click', async () => {
+      await deleteWord(b.dataset.id).catch(() => {});
+      renderVocabPage();
+      showToast('已删除');
+    });
+  });
+}
+
+function requireFeature(name, label) {
+  if (hasFeature(name)) return true;
+  showToast(`「${label}」为会员功能，请到会员中心开通`);
+  setTimeout(() => navigateTo('membership'), 1200);
+  return false;
+}
+
+// ===== AI Explain (per transcript line) =====
+async function explainLine(idx, container) {
+  if (!requireFeature('ai_explain', 'AI 智能讲解')) return;
+  const line = transcriptLines[idx];
+  if (!line) return;
+  container.innerHTML = '<div class="explain-loading"><i class="fas fa-spinner fa-spin"></i> AI 正在讲解…</div>';
+  try {
+    const epId = (currentEpisodeData && currentEpisodeData.id) ? currentEpisodeData.id : null;
+    const data = await explainText({ sentence: line.en, sentence_index: idx, episode: epId });
+    container.innerHTML = `
+      <div class="explain-block">
+        <pre class="explain-en">${esc(data.explanation_en)}</pre>
+        <pre class="explain-zh">${esc(data.explanation_zh)}</pre>
+      </div>`;
+  } catch (e) {
+    if (e && e.code === 'MEMBERSHIP_REQUIRED') {
+      container.innerHTML = `<div class="explain-block"><div class="explain-gated">该功能为会员专属，<a href="#" class="explain-upgrade">开通会员</a></div></div>`;
+      const up = container.querySelector('.explain-upgrade');
+      if (up) up.addEventListener('click', (ev) => { ev.preventDefault(); navigateTo('membership'); });
+    } else {
+      container.innerHTML = '<div class="explain-block"><div class="explain-gated">讲解获取失败，请稍后再试</div></div>';
+    }
+  }
+}
+
+// ===== Vocabulary capture from transcript =====
+function initWordPopover() {
+  const pop = document.getElementById('wordPopover');
+  const wordEl = document.getElementById('wordPopoverWord');
+  const addBtn = document.getElementById('wordAddBtn');
+  const exBtn = document.getElementById('wordExplainBtn');
+  let selectedWord = '';
+
+  function hide() { pop.style.display = 'none'; }
+
+  addBtn.addEventListener('click', async () => {
+    if (!isLoggedIn()) { showAuthModal('login'); hide(); return; }
+    if (!selectedWord) return;
+    const epId = (currentEpisodeData && currentEpisodeData.id) ? currentEpisodeData.id : null;
+    try {
+      await addWord({ term: selectedWord, source: 'transcript', episode: epId });
+      showToast(`已加入生词本：${selectedWord}`);
+      await loadWords();
+    } catch (e) {
+      if (e && e.id) showToast('该单词已在生词本中');
+      else showToast('添加失败');
+    }
+    hide();
+  });
+
+  exBtn.addEventListener('click', async () => {
+    if (!isLoggedIn()) { showAuthModal('login'); hide(); return; }
+    if (!requireFeature('ai_explain', 'AI 智能讲解')) { hide(); return; }
+    pop.classList.add('expanded');
+    wordEl.textContent = selectedWord;
+    const holder = document.getElementById('wordExplainHolder');
+    holder.style.display = 'block';
+    await explainLineText(selectedWord, holder);
+  });
+
+  // delegate clicks on transcript english words
+  document.addEventListener('click', (e) => {
+    const w = e.target.closest('.transcript-word');
+    if (w) {
+      selectedWord = w.dataset.word;
+      wordEl.textContent = selectedWord;
+      const rect = w.getBoundingClientRect();
+      pop.style.display = 'block';
+      pop.style.top = (window.scrollY + rect.bottom + 6) + 'px';
+      pop.style.left = Math.max(8, rect.left) + 'px';
+      e.stopPropagation();
+      return;
+    }
+    if (!pop.contains(e.target)) hide();
+  });
+}
+
+async function explainLineText(text, container) {
+  if (!isLoggedIn()) { showAuthModal('login'); return; }
+  container.innerHTML = '<div class="explain-loading"><i class="fas fa-spinner fa-spin"></i> AI 正在讲解…</div>';
+  try {
+    const data = await explainText({ sentence: text, sentence_index: 0, episode: null });
+    container.innerHTML = `<div class="explain-block"><pre class="explain-en">${esc(data.explanation_en)}</pre><pre class="explain-zh">${esc(data.explanation_zh)}</pre></div>`;
+  } catch (e) { container.innerHTML = '<div class="explain-block"><div class="explain-gated">讲解获取失败</div></div>'; }
+}
+
+// ===== Shadowing =====
+function initShadow() {
+  const modal = document.getElementById('shadowModal');
+  const close = document.getElementById('shadowModalClose');
+  const recordBtn = document.getElementById('shadowRecordBtn');
+  const stopBtn = document.getElementById('shadowStopBtn');
+  const result = document.getElementById('shadowResult');
+
+  close.addEventListener('click', () => { modal.style.display = 'none'; stopShadowRecording(true); });
+  modal.addEventListener('click', (e) => { if (e.target === modal) { modal.style.display = 'none'; stopShadowRecording(true); } });
+
+  recordBtn.addEventListener('click', startShadowRecording);
+  stopBtn.addEventListener('click', () => stopShadowRecording(false));
+}
+
+let shadowCurrentLineIdx = -1;
+
+function openShadow(idx) {
+  if (!requireFeature('shadowing', 'AI 跟读')) return;
+  if (idx == null) idx = lastActiveLineIdx;
+  if (idx < 0 || !transcriptLines[idx]) {
+    showToast('请先在文稿中选择一句开始跟读');
+    return;
+  }
+  shadowCurrentLineIdx = idx;
+  shadowTargetDuration = transcriptLines[idx].time != null && idx + 1 < transcriptLines.length && transcriptLines[idx + 1].time != null
+    ? (transcriptLines[idx + 1].time - transcriptLines[idx].time)
+    : (transcriptLines[idx].en ? Math.max(2, transcriptLines[idx].en.split(/\s+/).length * 0.5) : 4);
+  document.getElementById('shadowSentence').textContent = transcriptLines[idx].en;
+  document.getElementById('shadowResult').innerHTML = '';
+  document.getElementById('shadowTimer').textContent = '00:00';
+  document.getElementById('shadowRecordBtn').disabled = false;
+  document.getElementById('shadowStopBtn').disabled = true;
+  document.getElementById('shadowModal').style.display = 'flex';
+}
+
+async function startShadowRecording() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast('当前浏览器不支持录音');
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    shadowChunks = [];
+    shadowRecorder = new MediaRecorder(stream);
+    shadowRecorder.ondataavailable = (e) => { if (e.data.size > 0) shadowChunks.push(e.data); };
+    shadowRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(shadowChunks, { type: shadowRecorder.mimeType || 'audio/webm' });
+      await uploadShadow(blob);
+    };
+    shadowRecorder.start();
+    document.getElementById('shadowRecordBtn').disabled = true;
+    document.getElementById('shadowStopBtn').disabled = false;
+    shadowStartTs = Date.now();
+    shadowTimerId = setInterval(() => {
+      const s = Math.floor((Date.now() - shadowStartTs) / 1000);
+      document.getElementById('shadowTimer').textContent = formatTime(s);
+    }, 200);
+  } catch (e) {
+    showToast('无法访问麦克风，请允许录音权限');
+  }
+}
+
+function stopShadowRecording(silent) {
+  if (shadowTimerId) { clearInterval(shadowTimerId); shadowTimerId = null; }
+  if (shadowRecorder && shadowRecorder.state !== 'inactive') {
+    shadowRecorder.stop();
+  } else if (!silent) {
+    document.getElementById('shadowRecordBtn').disabled = false;
+    document.getElementById('shadowStopBtn').disabled = true;
+  }
+}
+
+async function uploadShadow(blob) {
+  const result = document.getElementById('shadowResult');
+  result.innerHTML = '<div class="explain-loading"><i class="fas fa-spinner fa-spin"></i> 评分中…</div>';
+  const form = new FormData();
+  form.append('audio', blob, 'shadow.webm');
+  form.append('episode', (currentEpisodeData && currentEpisodeData.id) ? currentEpisodeData.id : '');
+  form.append('sentence_index', shadowCurrentLineIdx);
+  form.append('sentence_text', transcriptLines[shadowCurrentLineIdx] ? transcriptLines[shadowCurrentLineIdx].en : '');
+  form.append('target_duration', shadowTargetDuration.toFixed(2));
+  try {
+    const data = await recordShadowing(form);
+    if (!data) { result.innerHTML = '<div class="explain-gated">请先登录后再跟读</div>'; return; }
+    const score = data.score || 0;
+    const level = score >= 80 ? '优秀' : score >= 60 ? '良好' : score >= 40 ? '及格' : '继续加油';
+    result.innerHTML = `
+      <div class="shadow-score">
+        <div class="shadow-score-num">${score}</div>
+        <div class="shadow-score-level">${level}</div>
+        <div class="shadow-score-tip">${scoreTip(score)}</div>
+      </div>`;
+  } catch (e) {
+    if (e && e.code === 'MEMBERSHIP_REQUIRED') {
+      result.innerHTML = '<div class="explain-gated">AI 跟读为会员功能，请开通会员</div>';
+    } else {
+      result.innerHTML = '<div class="explain-gated">评分失败，请重试</div>';
+    }
+  }
+  document.getElementById('shadowRecordBtn').disabled = false;
+  document.getElementById('shadowStopBtn').disabled = true;
+}
+
+function scoreTip(score) {
+  if (score >= 80) return '语速自然、连贯度很好，继续保持！';
+  if (score >= 60) return '整体不错，注意停顿与重音会更自然。';
+  if (score >= 40) return '试着跟原句节奏走，别太赶也别拖。';
+  return '多听几遍原句，先慢速跟读再加速。';
+}
+
+// ===== YouTube playback =====
+function ensureYouTubeAPI() {
+  if (window.YT || document.getElementById('ytapi')) return;
+  const tag = document.createElement('script');
+  tag.id = 'ytapi';
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+  window.onYouTubeIframeAPIReady = () => { ytReady = true; };
+}
+
+function loadYouTube(videoId, startSeconds) {
+  ensureYouTubeAPI();
+  const wrap = document.getElementById('ytWrap');
+  wrap.style.display = 'block';
+  wrap.innerHTML = '<div id="ytPlayerInner"></div>';
+  const start = startSeconds || 0;
+  const tryCreate = () => {
+    ytPlayer = new YT.Player('ytPlayerInner', {
+      height: '100%', width: '100%', videoId,
+      playerVars: { start: Math.floor(start), rel: 0, modestbranding: 1 },
+      events: {
+        onReady: () => { if (start) ytPlayer.seekTo(start, true); },
+        onStateChange: (e) => {
+          if (e.data === YT.PlayerState.PLAYING) syncPlayButtonState();
+          if (e.data === YT.PlayerState.PAUSED) syncPlayButtonState();
+        },
+      },
+    });
+  };
+  if (window.YT && window.YT.Player) tryCreate();
+  else { const iv = setInterval(() => { if (window.YT && window.YT.Player) { clearInterval(iv); tryCreate(); } }, 200); }
+}
+
+function unloadYouTube() {
+  const wrap = document.getElementById('ytWrap');
+  if (ytPlayer && ytPlayer.destroy) { try { ytPlayer.destroy(); } catch (e) {} }
+  ytPlayer = null;
+  wrap.style.display = 'none';
+  wrap.innerHTML = '';
 }
 
 async function handleNoteSubmit() {

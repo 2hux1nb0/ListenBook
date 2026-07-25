@@ -224,3 +224,86 @@ async function getUserStats() {
 async function getUserProfile() {
   return await apiRequest('/auth/user/profile/');
 }
+
+// ===== Membership API =====
+async function getTiers() {
+  return await apiRequest('/tiers/');
+}
+
+async function getMembershipStatus() {
+  return await apiRequest('/membership/status/');
+}
+
+async function subscribeMembership(tierSlug, plan = 'monthly', paymentMethod = 'mock_card') {
+  return await apiRequest('/membership/subscribe/', {
+    method: 'POST',
+    body: JSON.stringify({ tier_slug: tierSlug, plan, payment_method: paymentMethod }),
+  });
+}
+
+async function cancelMembership() {
+  return await apiRequest('/membership/cancel/', { method: 'POST' });
+}
+
+// ===== Vocabulary API =====
+async function getWords(params = {}) {
+  const queryString = new URLSearchParams(params).toString();
+  const endpoint = `/vocabulary/${queryString ? '?' + queryString : ''}`;
+  return await apiRequest(endpoint);
+}
+
+async function addWord(payload) {
+  return await apiRequest('/vocabulary/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+async function deleteWord(wordId) {
+  return await apiRequest(`/vocabulary/${wordId}/`, { method: 'DELETE' });
+}
+
+async function clearWords() {
+  return await apiRequest('/vocabulary/clear/', { method: 'DELETE' });
+}
+
+// ===== AI Explain API =====
+async function explainText(payload) {
+  return await apiRequest('/ai/explain/', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+// ===== Shadowing API (multipart) =====
+async function recordShadowing(formData) {
+  const token = localStorage.getItem('access_token');
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const resp = await fetch(`${API_BASE}/shadowing/record/`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  if (resp.status === 401) {
+    const ok = await refreshAccessToken();
+    if (ok) {
+      headers['Authorization'] = `Bearer ${localStorage.getItem('access_token')}`;
+      const r2 = await fetch(`${API_BASE}/shadowing/record/`, { method: 'POST', headers, body: formData });
+      return await r2.json();
+    }
+    logout();
+    return null;
+  }
+  const text = await resp.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch (e) {}
+  if (!resp.ok) throw data;
+  return data;
+}
+
+async function getShadowHistory(params = {}) {
+  const queryString = new URLSearchParams(params).toString();
+  const endpoint = `/shadowing/history/${queryString ? '?' + queryString : ''}`;
+  return await apiRequest(endpoint);
+}

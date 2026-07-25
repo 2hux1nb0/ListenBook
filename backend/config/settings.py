@@ -32,6 +32,10 @@ INSTALLED_APPS = [
     'playback',
     'favorites',
     'notes',
+    'membership',
+    'vocabulary',
+    'ai',
+    'shadowing',
 ]
 
 MIDDLEWARE = [

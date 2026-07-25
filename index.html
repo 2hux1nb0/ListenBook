@@ -12,7 +12,7 @@
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap"></noscript>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></noscript>
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/app.css?v=20260726e">
 </head>
 <body>
   <div id="app">
@@ -48,6 +48,15 @@
         <a href="#" class="sidebar-item" data-page="history">
           <i class="fas fa-chart-bar"></i>
           <span class="sidebar-label">学习记录</span>
+        </a>
+        <a href="#" class="sidebar-item" data-page="vocab">
+          <i class="fas fa-spell-check"></i>
+          <span class="sidebar-label">生词本</span>
+        </a>
+        <a href="#" class="sidebar-item" data-page="membership">
+          <i class="fas fa-crown"></i>
+          <span class="sidebar-label">会员中心</span>
+          <span class="membership-badge" id="sidebarMemberBadge" style="display:none"></span>
         </a>
         <a href="#" class="sidebar-item" data-page="blog">
           <i class="far fa-file-alt"></i>
@@ -177,7 +186,7 @@
 
         <section class="section-block">
           <div class="section-header">
-            <h2 class="section-title">✨ 推荐播客</h2>
+            <h2 class="section-title">热门推荐播客</h2>
           </div>
           <div class="podcast-grid" id="recommendedGrid"></div>
         </section>
@@ -271,7 +280,7 @@
             <div class="stat-icon"><i class="fas fa-bullseye"></i></div>
             <div class="stat-info">
               <div class="stat-value" id="statGoal">0</div>
-              <div class="stat-label">周目标(分)</div>
+              <div class="stat-label">周目标</div>
             </div>
           </div>
         </div>
@@ -291,13 +300,13 @@
           <div class="blog-card">
             <div class="blog-date">2024-01-15</div>
             <h3 class="blog-title">如何通过播客提升英语听力？</h3>
-            <p class="blog-excerpt">播客是一种非常有效的英语学习方式。通过每天收听15-30分钟的英语播客，你可以显著提升听力理解能力和词汇量...</p>
+            <p class="blog-excerpt">播客是一种非常有效的英语学习方式。通过每天收听15-30分钟的英语播客，你可以显著提升听力理解能力和词汇量。</p>
             <a href="#" class="blog-readmore">阅读全文 →</a>
           </div>
           <div class="blog-card">
             <div class="blog-date">2024-01-10</div>
             <h3 class="blog-title">推荐5个适合英语初学者的播客</h3>
-            <p class="blog-excerpt">对于英语初学者来说，选择合适的播客非常重要。本文推荐5个语速较慢、用词简单的播客节目...</p>
+            <p class="blog-excerpt">对于英语初学者来说，选择合适的播客非常重要。本文推荐几个语速较慢、用词简单的播客节目...</p>
             <a href="#" class="blog-readmore">阅读全文 →</a>
           </div>
           <div class="blog-card">
@@ -345,12 +354,42 @@
       <!-- Search Result View -->
       <div id="searchView" class="view">
         <div class="search-results-header">
-          <h2>搜索结果：<span id="searchKeyword"></span></h2>
+          <h2>搜索结果<span id="searchKeyword"></span></h2>
         </div>
         <div class="podcast-grid" id="searchResults"></div>
         <div class="empty-state" id="searchEmpty" style="display:none">
           <i class="fas fa-search"></i>
           <p>未找到相关结果</p>
+        </div>
+      </div>
+
+      <!-- Membership View -->
+      <div id="membershipView" class="view">
+        <div class="pricing-hero">
+          <h1 class="pricing-hero-title">选择适合你的会员方案</h1>
+          <p class="pricing-hero-sub">解锁 AI 智能讲解、AI 跟读评分等核心学习功能，让英语听力突飞猛进</p>
+          <div class="billing-toggle" id="billingToggle">
+            <button class="billing-opt active" data-period="monthly">月付</button>
+            <button class="billing-opt" data-period="yearly">年付 <span class="billing-save" id="billingSave">省17%</span></button>
+          </div>
+        </div>
+        <div class="membership-current" id="membershipCurrent"></div>
+        <div class="pricing-grid" id="pricingGrid"></div>
+        <div class="pricing-trust">
+          <div class="trust-item"><i class="fas fa-shield-alt"></i><span>随时可在后台取消</span></div>
+          <div class="trust-item"><i class="fas fa-bolt"></i><span>开通即刻生效</span></div>
+          <div class="trust-item"><i class="fas fa-headset"></i><span>专属客服支持</span></div>
+        </div>
+      </div>
+
+      <!-- Vocabulary View -->
+      <div id="vocabView" class="view">
+        <h2 class="page-title">📚 我的生词本</h2>
+        <div class="vocab-list" id="vocabList"></div>
+        <div class="empty-state" id="vocabEmpty" style="display:none">
+          <i class="fas fa-spell-check"></i>
+          <p>生词本还是空的</p>
+          <p class="empty-hint">在文稿中点击任意单词即可加入生词本</p>
         </div>
       </div>
     </main>
@@ -363,7 +402,7 @@
             <img src="images/logo.svg" alt="ListenBook" class="logo-img">
             <span class="logo-text">ListenBook</span>
           </div>
-          <p class="footer-desc">ListenBook是英语学习和听力练习平台，通过播客帮助用户提升英语听力。</p>
+          <p class="footer-desc">ListenBook是英语学习和听力练习平台，通过播客帮助用户提升英语听力水平</p>
         </div>
         <div class="footer-links">
           <div class="footer-col">
@@ -413,7 +452,7 @@
           <div class="player-podcast" id="playerPodcast"></div>
         </div>
         <div class="player-controls">
-          <button class="player-btn player-btn-nav" id="playerPrev" aria-label="上一首">
+          <button class="player-btn player-btn-nav" id="playerPrev" aria-label="上一个">
             <i class="fas fa-backward-step"></i>
           </button>
           <button class="player-btn player-btn-seek" id="playerRewind" aria-label="后退10秒">
@@ -427,7 +466,7 @@
             <i class="fas fa-rotate-right"></i>
             <span class="btn-label">+10s</span>
           </button>
-          <button class="player-btn player-btn-nav" id="playerNext" aria-label="下一首">
+          <button class="player-btn player-btn-nav" id="playerNext" aria-label="下一个">
             <i class="fas fa-forward-step"></i>
           </button>
         </div>
@@ -439,6 +478,9 @@
         <div class="player-extra">
           <button class="player-btn player-note-btn" id="playerNoteBtn" title="添加笔记">
             <i class="fas fa-pen"></i>
+          </button>
+          <button class="player-btn player-shadow-btn" id="playerShadowBtn" title="AI 跟读">
+            <i class="fas fa-microphone"></i>
           </button>
           <button class="player-btn player-transcript-btn" id="playerTranscriptBtn" title="字幕/文稿">
             <i class="fas fa-file-lines"></i>
@@ -454,6 +496,7 @@
           <i class="fas fa-times"></i>
         </button>
       </div>
+      <div class="yt-wrap" id="ytWrap" style="display:none"></div>
       <audio id="audioPlayer"></audio>
     </div>
 
@@ -504,7 +547,7 @@
         <div class="auth-form" id="profileForm" style="display:none">
           <div class="profile-header">
             <div class="profile-avatar"><i class="fas fa-user"></i></div>
-            <h2 class="profile-name" id="profileName">用户名</h2>
+          <h2 class="profile-name" id="profileName">用户名</h2>
           </div>
           <div class="profile-info">
             <div class="profile-item">
@@ -545,10 +588,54 @@
         <div class="transcript-body" id="transcriptBody"></div>
       </div>
     </div>
+
+    <!-- Payment Modal -->
+    <div class="modal-overlay" id="paymentModal" style="display:none">
+      <div class="modal-content payment-modal">
+        <button class="modal-close" id="paymentModalClose"><i class="fas fa-times"></i></button>
+        <div id="payBody">
+          <h2 class="auth-title">确认开通会员</h2>
+          <div class="pay-order" id="payOrder"></div>
+          <div class="pay-methods" id="payMethods">
+            <div class="pay-method active" data-method="wechat"><i class="fab fa-weixin"></i><span>微信支付</span></div>
+            <div class="pay-method" data-method="alipay"><i class="fab fa-alipay"></i><span>支付宝</span></div>
+            <div class="pay-method" data-method="card"><i class="fas fa-credit-card"></i><span>银行卡</span></div>
+          </div>
+          <button class="auth-submit-btn" id="payConfirmBtn">确认支付</button>
+          <p class="pay-note">演示环境，不会真实扣款</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shadowing Modal -->
+    <div class="modal-overlay" id="shadowModal" style="display:none">
+      <div class="modal-content shadow-modal">
+        <button class="modal-close" id="shadowModalClose"><i class="fas fa-times"></i></button>
+        <h2 class="auth-title">AI 跟读评分</h2>
+        <p class="shadow-sentence" id="shadowSentence"></p>
+        <div class="shadow-controls">
+          <button class="auth-submit-btn" id="shadowRecordBtn"><i class="fas fa-microphone"></i> 开始跟读</button>
+          <button class="auth-submit-btn secondary" id="shadowStopBtn" disabled>停止</button>
+        </div>
+        <div class="shadow-timer" id="shadowTimer">00:00</div>
+        <div class="shadow-result" id="shadowResult"></div>
+      </div>
+    </div>
+
+    <!-- Word Popover -->
+    <div class="word-popover" id="wordPopover" style="display:none">
+      <div class="word-popover-word" id="wordPopoverWord"></div>
+      <div class="word-popover-actions">
+        <button class="word-popover-btn" id="wordAddBtn"><i class="fas fa-plus"></i> 加入生词本</button>
+        <button class="word-popover-btn" id="wordExplainBtn"><i class="fas fa-brain"></i> AI 讲解</button>
+      </div>
+      <div class="word-popover-explain" id="wordExplainHolder" style="display:none"></div>
+    </div>
+
   </div>
 
-  <script src="js/data.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/data.js?v=20260726e"></script>
+  <script src="js/api.js?v=20260726e"></script>
+  <script src="js/app.js?v=20260726e"></script>
 </body>
 </html>

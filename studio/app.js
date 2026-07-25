@@ -241,6 +241,10 @@ const PAGE_TITLES = {
   episodes: '节目管理',
   categories: '分类管理',
   users: '用户管理',
+  membership: '会员管理',
+  vocabulary: '生词管理',
+  'ai-explain': 'AI 讲解记录',
+  shadowing: '跟读记录',
 };
 
 function setupNav() {
@@ -303,6 +307,10 @@ function loadCurrentPage() {
     case 'podcasts':    loadPodcasts(); break;
     case 'episodes':    loadEpisodes(); break;
     case 'categories':  loadCategories(); break;
+    case 'membership':  loadMembership(); break;
+    case 'vocabulary':  loadVocabulary(); break;
+    case 'ai-explain':  loadAIExplain(); break;
+    case 'shadowing':  loadShadowing(); break;
   }
 }
 
@@ -1157,6 +1165,134 @@ async function submitCategoryForm(submitBtn) {
 }
 
 // ─── Init ────────────────────────────────────────────────────
+// ─── Membership Page ─────────────────────────────────────────
+async function loadMembership() {
+  const tbody = document.getElementById('membership-tbody');
+  const empty = document.getElementById('membership-empty');
+  try {
+    const data = await apiGet('/api/tiers/');
+    const items = data.results || data || [];
+    if (items.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    tbody.innerHTML = items.map(t => `<tr>
+      <td>$${t.id}</td>
+      <td>${esc(t.slug)}</td>
+      <td>${esc(t.name)}</td>
+      <td>$${t.price_monthly != null ? '¥' + Number(t.price_monthly).toFixed(0) : '-'}</td>
+      <td>$${t.price_yearly != null ? '¥' + Number(t.price_yearly).toFixed(0) : '-'}</td>
+      <td>${t.sort_order}</td>
+      <td><span class="badge ${t.is_active ? 'badge-success' : 'badge-secondary'}">${t.is_active ? '启用' : '禁用'}</span></td>
+      <td><button class="btn btn-sm btn-ghost" onclick="toggleTier(${t.id}, ${t.is_active})">${t.is_active ? '禁用' : '启用'}</button></td>
+    </tr>`).join('');
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="8">加载失败: ${esc(e.message)}</td></tr>`; empty.style.display = 'none'; }
+}
+
+async function toggleTier(tierId, currentlyActive) {
+  try {
+    await apiPatch('/api/tiers/' + tierId + '/', { is_active: !currentlyActive });
+    showToast('success', '已更新', '会员套餐 ' + (currentlyActive ? '已禁用' : '已启用'));
+    loadMembership();
+  } catch (e) {
+    showToast('error', '操作失败', e.message);
+  }
+}
+
+// ─── Vocabulary Page ─────────────────────────────────────────
+async function loadVocabulary() {
+  const tbody = document.getElementById('vocabulary-tbody');
+  const empty = document.getElementById('vocabulary-empty');
+  try {
+    const data = await apiGet('/api/vocabulary/');
+    const items = data.results || data || [];
+    if (items.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    tbody.innerHTML = items.map(v => `<tr>
+      <td>${v.id}</td>
+      <td><strong>${esc(v.term)}</strong></td>
+      <td>${esc(v.pos || '-')}</td>
+      <td>${esc(v.definition || '-')}</td>
+      <td>${esc((v.example || '').substring(0, 60))}${v.example && v.example.length > 60 ? '…' : ''}</td>
+      <td>${esc(v.source || '-')}</td>
+      <td>${v.created_at ? new Date(v.created_at).toLocaleDateString() : '-'}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteVocab(${v.id})">删除</button></td>
+    </tr>`).join('');
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="8">加载失败: ${esc(e.message)}</td></tr>`; empty.style.display = 'none'; }
+}
+
+async function deleteVocab(id) {
+  try {
+    await apiDelete('/api/vocabulary/' + id + '/');
+    showToast('success', '已删除', '生词已删除');
+    loadVocabulary();
+  } catch (e) { showToast('error', '删除失败', e.message); }
+}
+
+// ─── AI Explain Page ─────────────────────────────────────────
+async function loadAIExplain() {
+  const tbody = document.getElementById('aiexplain-tbody');
+  const empty = document.getElementById('aiexplain-empty');
+  try {
+    const data = await apiGet('/api/studio/explanations/');
+    const items = data.results || data || [];
+    if (items.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    tbody.innerHTML = items.map(a => `<tr>
+      <td>${a.id}</td>
+      <td>${esc((a.sentence || '').substring(0, 40))}${a.sentence && a.sentence.length > 40 ? '…' : ''}</td>
+      <td>${esc((a.explanation_en || '').substring(0, 40))}…</td>
+      <td>${esc((a.explanation_zh || '').substring(0, 40))}…</td>
+      <td>${a.episode || '-'}</td>
+      <td>${a.created_at ? new Date(a.created_at).toLocaleDateString() : '-'}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteAIExplain(${a.id})">删除</button></td>
+    </tr>`).join('');
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="7">加载失败: ${esc(e.message)}</td></tr>`; empty.style.display = 'none'; }
+}
+
+async function deleteAIExplain(id) {
+  try {
+    await apiDelete('/api/studio/explanations/' + id + '/');
+    showToast('success', '已删除', '讲解记录已删除');
+    loadAIExplain();
+  } catch (e) { showToast('error', '删除失败', e.message); }
+}
+
+// ─── Shadowing Page ──────────────────────────────────────────
+async function loadShadowing() {
+  const tbody = document.getElementById('shadowing-tbody');
+  const empty = document.getElementById('shadowing-empty');
+  try {
+    const data = await apiGet('/api/studio/records/');
+    const items = data.results || data || [];
+    if (items.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    tbody.innerHTML = items.map(s => `<tr>
+      <td>${s.id}</td>
+      <td>${s.user || '-'}</td>
+      <td>${s.episode || '-'}</td>
+      <td>${s.sentence_index != null ? s.sentence_index : '-'}</td>
+      <td><span class="badge ${getScoreBadge(s.overall_score)}">${s.overall_score != null ? Number(s.overall_score).toFixed(1) : '-'}</span></td>
+      <td>${esc(s.details ? (JSON.stringify(s.details).substring(0, 40) + '…') : '-')}</td>
+      <td>${s.created_at ? new Date(s.created_at).toLocaleDateString() : '-'}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteShadow(${s.id})">删除</button></td>
+    </tr>`).join('');
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="8">加载失败: ${esc(e.message)}</td></tr>`; empty.style.display = 'none'; }
+}
+
+function getScoreBadge(score) {
+  if (score == null) return 'badge-secondary';
+  if (score >= 80) return 'badge-success';
+  if (score >= 50) return 'badge-warning';
+  return 'badge-danger';
+}
+
+async function deleteShadow(id) {
+  try {
+    await apiDelete('/api/studio/records/' + id + '/');
+    showToast('success', '已删除', '跟读记录已删除');
+    loadShadowing();
+  } catch (e) { showToast('error', '删除失败', e.message); }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   setupLogin();

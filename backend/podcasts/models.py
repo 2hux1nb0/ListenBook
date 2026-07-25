@@ -27,6 +27,10 @@ class Podcast(models.Model):
         ('intermediate', '中级'),
         ('advanced', '高级'),
     ]
+    CONTENT_TYPE_CHOICES = [
+        ('audio', '音频播客'),
+        ('youtube', 'YouTube 视频'),
+    ]
 
     title = models.CharField(max_length=300)
     slug = models.SlugField(max_length=300, unique=True)
@@ -35,6 +39,8 @@ class Podcast(models.Model):
     cover_image = models.ImageField(upload_to='podcasts/covers/', blank=True, null=True)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='podcasts')
     difficulty = models.CharField(max_length=20, choices=DIFFICULTY_CHOICES, default='intermediate')
+    content_type = models.CharField(max_length=20, choices=CONTENT_TYPE_CHOICES, default='audio')
+    youtube_url = models.URLField(blank=True, default='', help_text='YouTube 频道/视频地址（content_type=youtube 时填写）')
     language = models.CharField(max_length=10, default='en')
     website_url = models.URLField(blank=True, default='')
     feed_url = models.URLField(blank=True, default='')

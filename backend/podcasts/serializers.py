@@ -18,7 +18,8 @@ class PodcastListSerializer(serializers.ModelSerializer):
             'id', 'title', 'slug', 'author', 'description', 'cover_image',
             'category', 'category_name', 'difficulty', 'language',
             'is_featured', 'is_active', 'episode_count', 'episode_count_display',
-            'subscriber_count', 'avg_rating', 'created_at'
+            'subscriber_count', 'avg_rating', 'created_at',
+            'content_type', 'youtube_url'
         ]
 
 

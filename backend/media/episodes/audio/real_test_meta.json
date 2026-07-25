@@ -1,0 +1,9 @@
+{
+  "title": "The Boarded-Up House",
+  "author": "LibriVox volunteer narrators",
+  "description": "Real human-read public-domain English speech (LibriVox audiobook narration, distributed as the LibriSpeech test-clean corpus). A coherent single-chapter excerpt used as a ListenBook test episode.",
+  "duration_seconds": 120,
+  "language": "en",
+  "source_url": "https://www.openslr.org/12/",
+  "en_transcript_path": "episodes/audio/real_test_en.txt"
+}

@@ -95,6 +95,30 @@
             <span>用户管理</span>
           </a>
         </li>
+        <li class="nav-item" data-page="membership">
+          <a href="#" class="nav-link" data-nav="membership">
+            <i class="fa-solid fa-crown"></i>
+            <span>会员管理</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="vocabulary">
+          <a href="#" class="nav-link" data-nav="vocabulary">
+            <i class="fa-solid fa-book"></i>
+            <span>生词管理</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="ai-explain">
+          <a href="#" class="nav-link" data-nav="ai-explain">
+            <i class="fa-solid fa-brain"></i>
+            <span>AI 讲解记录</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="shadowing">
+          <a href="#" class="nav-link" data-nav="shadowing">
+            <i class="fa-solid fa-microphone"></i>
+            <span>跟读记录</span>
+          </a>
+        </li>
       </ul>
     </nav>
     <div class="sidebar-footer">
@@ -351,6 +375,70 @@
             <a href="/admin/" target="_blank" rel="noopener" class="users-admin-link">
               <i class="fa-solid fa-cog"></i> Django 后台管理 →
             </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Membership Tiers Page ===== -->
+      <section id="page-membership" class="page">
+        <div class="content-card">
+          <div class="content-card-header">
+            <h2>会员套餐管理</h2>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table" id="membership-table">
+              <thead><tr><th>ID</th><th>标识</th><th>名称</th><th>月付</th><th>年付</th><th>排序</th><th>启用</th><th>操作</th></tr></thead>
+              <tbody id="membership-tbody"></tbody>
+            </table>
+            <p class="empty-hint" id="membership-empty" style="display:none">暂无套餐数据</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Vocabulary Page ===== -->
+      <section id="page-vocabulary" class="page">
+        <div class="content-card">
+          <div class="content-card-header">
+            <h2>生词管理</h2>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table" id="vocabulary-table">
+              <thead><tr><th>ID</th><th>单词</th><th>词性</th><th>释义</th><th>例句</th><th>来源</th><th>创建时间</th><th>操作</th></tr></thead>
+              <tbody id="vocabulary-tbody"></tbody>
+            </table>
+            <p class="empty-hint" id="vocabulary-empty" style="display:none">暂无生词数据</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== AI Explain Page ===== -->
+      <section id="page-ai-explain" class="page">
+        <div class="content-card">
+          <div class="content-card-header">
+            <h2>AI 讲解记录</h2>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table" id="aiexplain-table">
+              <thead><tr><th>ID</th><th>句子</th><th>英文讲解</th><th>中文讲解</th><th>节目</th><th>创建时间</th><th>操作</th></tr></thead>
+              <tbody id="aiexplain-tbody"></tbody>
+            </table>
+            <p class="empty-hint" id="aiexplain-empty" style="display:none">暂无讲解记录</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Shadowing Page ===== -->
+      <section id="page-shadowing" class="page">
+        <div class="content-card">
+          <div class="content-card-header">
+            <h2>跟读记录</h2>
+          </div>
+          <div class="table-wrapper">
+            <table class="data-table" id="shadowing-table">
+              <thead><tr><th>ID</th><th>用户</th><th>节目</th><th>句子索引</th><th>评分</th><th>详情</th><th>创建时间</th><th>操作</th></tr></thead>
+              <tbody id="shadowing-tbody"></tbody>
+            </table>
+            <p class="empty-hint" id="shadowing-empty" style="display:none">暂无跟读记录</p>
           </div>
         </div>
       </section>

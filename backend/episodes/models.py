@@ -8,6 +8,7 @@ class Episode(models.Model):
     description = models.TextField(blank=True, default='')
     audio_file = models.FileField(upload_to='episodes/audio/', blank=True, null=True)
     audio_url = models.URLField(blank=True, default='')
+    youtube_id = models.CharField(max_length=50, blank=True, default='', help_text='YouTube 视频ID（content_type=youtube 时填写）')
     audio_duration = models.IntegerField(help_text='Duration in seconds', default=0)
     audio_size = models.BigIntegerField(default=0)
     subtitle_en = models.TextField(blank=True, default='')

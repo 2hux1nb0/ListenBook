@@ -13,6 +13,7 @@ from django.contrib.auth import get_user_model
 from podcasts.models import Category, Podcast
 from episodes.models import Episode
 from accounts.models import LearningStats
+from membership.models import MembershipTier, UserMembership
 
 User = get_user_model()
 
@@ -216,5 +217,58 @@ print(f'\n🎉 Seed data complete!')
 print(f'   Categories: {Category.objects.count()}')
 print(f'   Podcasts: {Podcast.objects.count()}')
 print(f'   Episodes: {Episode.objects.count()}')
-print(f'\n   Admin login: admin / admin123')
+print(f'\n   Admin login: admin / admin123456')
 print(f'   Test login: testuser / test123')
+
+# ---------------------------------------------------------------------------
+# Membership tiers
+# ---------------------------------------------------------------------------
+tiers_data = [
+    {
+        'slug': 'free', 'name': '免费版', 'name_en': 'Free',
+        'price_monthly': 0, 'price_yearly': 0,
+        'description': '基础功能免费体验',
+        'features': ['basic_player', 'transcript', 'translation', 'notes',
+                     'favorites', 'history', 'vocabulary'],
+        'badge_color': '#95a5a6', 'sort_order': 0,
+    },
+    {
+        'slug': 'pro', 'name': '会员 Pro', 'name_en': 'Pro',
+        'price_monthly': 39, 'price_yearly': 390,
+        'description': '解锁 AI 智能讲解、AI 跟读评分等核心学习功能',
+        'features': ['basic_player', 'transcript', 'translation', 'notes',
+                     'favorites', 'history', 'vocabulary', 'ai_explain',
+                     'shadowing', 'hd_audio', 'all_content', 'no_ads'],
+        'badge_color': '#5858f5', 'sort_order': 1,
+    },
+    {
+        'slug': 'premium', 'name': '尊享 Premium', 'name_en': 'Premium',
+        'price_monthly': 69, 'price_yearly': 690,
+        'description': 'Pro 全部功能 + 离线下载与优先支持',
+        'features': ['basic_player', 'transcript', 'translation', 'notes',
+                     'favorites', 'history', 'vocabulary', 'ai_explain',
+                     'shadowing', 'hd_audio', 'all_content', 'no_ads',
+                     'offline', 'priority_support'],
+        'badge_color': '#f39c12', 'sort_order': 2,
+    },
+]
+for tdata in tiers_data:
+    tier, created = MembershipTier.objects.get_or_create(slug=tdata['slug'], defaults=tdata)
+    if created:
+        print(f'✅ Membership tier created: {tier.name}')
+
+# Make the admin account a Pro member (so member features are testable)
+admin = User.objects.filter(username='admin').first()
+if admin:
+    from datetime import timedelta
+    from django.utils import timezone
+    pro_tier = MembershipTier.objects.get(slug='pro')
+    um, _ = UserMembership.objects.get_or_create(user=admin)
+    um.tier = pro_tier
+    um.status = 'active'
+    um.expires_at = timezone.now() + timedelta(days=365)
+    um.auto_renew = True
+    um.payment_method = 'mock_card'
+    um.order_id = 'MOCK-SEED-ADMIN'
+    um.save()
+    print('✅ Admin granted Pro membership (expires in 365 days)')
