@@ -18,7 +18,7 @@ User = get_user_model()
 
 # Create superuser
 if not User.objects.filter(username='admin').exists():
-    admin = User.objects.create_superuser('admin', 'admin@listenleap.com', 'admin123')
+    admin = User.objects.create_superuser('admin', 'admin@listenbook.com', 'admin123456')
     admin.nickname = '管理员'
     admin.save()
     LearningStats.objects.create(user=admin)
@@ -162,9 +162,14 @@ podcasts_data = [
     },
 ]
 
+# Each episode may carry a bilingual transcript.
+# Lines use the format:  MM:SS text   (one line per cue).
+# Lines without a leading timestamp are treated as un-timed notes.
 episodes_data = {
     'bbc-news-daily': [
-        {'title': 'Global Economy Update - January 2024', 'audio_duration': 1112, 'publish_date': '2024-01-15'},
+        {'title': 'Global Economy Update - January 2024', 'audio_duration': 1112, 'publish_date': '2024-01-15',
+         'subtitle_en': "00:00 Welcome to the Global Economy Update for January 2024.\n00:12 Markets opened higher across Asia this morning.\n00:28 Investors remain cautious about inflation data due next week.\n00:55 Central banks signal a slower pace of rate changes.\n01:20 Energy prices eased after a mild winter in Europe.\n01:48 We will keep watching the numbers closely.",
+         'subtitle_zh': "00:00 欢迎收听2024年1月的全球经济简报。\n00:12 今晨亚洲股市普遍高开。\n00:28 投资者对下周公布的通胀数据仍保持谨慎。\n00:55 各国央行暗示将放缓加息节奏。\n01:20 欧洲暖冬过后，能源价格回落。\n01:48 我们将持续密切关注相关数据。"},
         {'title': 'Climate Summit: Key Takeaways', 'audio_duration': 945, 'publish_date': '2024-01-14'},
         {'title': 'Tech Industry Layoffs Continue', 'audio_duration': 740, 'publish_date': '2024-01-13'},
     ],
@@ -173,11 +178,15 @@ episodes_data = {
         {'title': 'Community Stories: Local Heroes', 'audio_duration': 510, 'publish_date': '2024-01-14'},
     ],
     'ted-talks-daily': [
-        {'title': 'The Power of Vulnerability', 'audio_duration': 1215, 'publish_date': '2024-01-15'},
+        {'title': 'The Power of Vulnerability', 'audio_duration': 1215, 'publish_date': '2024-01-15',
+         'subtitle_en': "00:00 Vulnerability is not weakness; it is our most accurate measure of courage.\n00:22 We pretend that everything is okay when it is not.\n00:48 The people who have a sense of worthiness simply believe they are enough.\n01:20 Let yourself be seen, deeply seen.\n01:55 Love with your whole heart, even though there is no guarantee.",
+         'subtitle_zh': "00:00 脆弱不是软弱，它恰恰是勇气最真实的度量。\n00:22 我们假装一切安好，即便事实并非如此。\n00:48 那些拥有自我价值感的人，只是打心底里相信自己已经足够好。\n01:20 让自己被看见，被深深地看见。\n01:55 用整颗心去爱，哪怕没有任何保证。"},
         {'title': 'How Great Leaders Inspire Action', 'audio_duration': 1110, 'publish_date': '2024-01-10'},
     ],
     '6-minute-english': [
-        {'title': 'Learning a Language', 'audio_duration': 360, 'publish_date': '2024-01-15'},
+        {'title': 'Learning a Language', 'audio_duration': 360, 'publish_date': '2024-01-15',
+         'subtitle_en': "00:00 In this programme we discuss how to learn a new language.\n00:18 Research shows that consistency matters more than talent.\n00:42 Listening to podcasts every day can improve your ear.\n01:05 Try shadowing: repeat what you hear, out loud, immediately.\n01:30 Mistakes are proof that you are trying. Keep going!",
+         'subtitle_zh': "00:00 本期节目我们聊聊如何学习一门新语言。\n00:18 研究表明，坚持比天赋更重要。\n00:42 每天听播客能提升你的听力敏感度。\n01:05 试试影子跟读：听到什么，立刻大声复述。\n01:30 犯错说明你在努力，继续加油！"},
         {'title': 'Food and Health', 'audio_duration': 360, 'publish_date': '2024-01-08'},
     ],
 }

@@ -1,6 +1,18 @@
 // ===== ListenLeap Admin Dashboard =====
-const API_BASE = 'http://localhost:8000/api';
-const MEDIA_BASE = 'http://localhost:8000';
+const API_BASE = (() => {
+  const host = window.location.hostname || 'localhost';
+  if (host === 'listenbook.local' || host === 'localhost' || host === '127.0.0.1') {
+    return `http://${host}:8000/api`;
+  }
+  return 'http://localhost:8000/api';
+})();
+const MEDIA_BASE = (() => {
+  const host = window.location.hostname || 'localhost';
+  if (host === 'listenbook.local' || host === 'localhost' || host === '127.0.0.1') {
+    return `http://${host}:8000`;
+  }
+  return 'http://localhost:8000';
+})();
 let currentPage = 'dashboard';
 let podcastsCache = [];
 let episodesCache = [];
@@ -10,6 +22,7 @@ let pendingConfirm = null;
 // ===== Init =====
 document.addEventListener('DOMContentLoaded', () => {
   initNavigation();
+  initLoginForm();
   initAuth();
 });
 
@@ -48,42 +61,98 @@ function navigateTo(page) {
 function loadCurrentPage() { navigateTo(currentPage); }
 
 // ===== Auth =====
-async function initAuth() {
-  // Try login with admin credentials to get token
-  try {
-    const res = await fetch(`${API_BASE}/auth/login/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123' }),
-    });
-    if (res.ok) {
+function initLoginForm() {
+  const form = document.getElementById('adminLoginForm');
+  if (!form) return;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('adminLoginUsername').value.trim();
+    const password = document.getElementById('adminLoginPassword').value;
+    const errorEl = document.getElementById('adminLoginError');
+    errorEl.textContent = '';
+
+    try {
+      const res = await fetch(`${API_BASE}/auth/login/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) {
+        errorEl.textContent = '用户名或密码错误';
+        return;
+      }
       const data = await res.json();
       localStorage.setItem('admin_token', data.tokens.access);
       document.getElementById('adminUser').textContent = data.user.username || '管理员';
-    } else {
-      document.getElementById('adminUser').textContent = '未认证';
+      document.getElementById('adminLoginScreen').style.display = 'none';
+      document.getElementById('adminMainShell').style.display = 'flex';
+      loadDashboard();
+    } catch (e) {
+      errorEl.textContent = '登录失败，请检查后端服务';
     }
-  } catch (e) {
-    document.getElementById('adminUser').textContent = '连接失败';
+  });
+}
+
+async function tryAdminLogin() {
+  const credentials = [
+    { username: 'admin', password: 'admin123456' },
+    { username: 'admin', password: 'admin123' },
+  ];
+
+  for (const credential of credentials) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/login/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(credential),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem('admin_token', data.tokens.access);
+        if (document.getElementById('adminUser')) {
+          document.getElementById('adminUser').textContent = data.user.username || '管理员';
+        }
+        return data;
+      }
+    } catch (e) {
+      // continue to next credential
+    }
   }
-  loadDashboard();
+
+  if (document.getElementById('adminUser')) {
+    document.getElementById('adminUser').textContent = '未认证';
+  }
+  return null;
+}
+
+async function initAuth() {
+  const token = localStorage.getItem('admin_token');
+  if (token) {
+    try {
+      const data = await tryAdminLogin();
+      if (data) {
+        document.getElementById('adminLoginScreen').style.display = 'none';
+        document.getElementById('adminMainShell').style.display = 'flex';
+        loadDashboard();
+        return;
+      }
+    } catch (e) {
+      localStorage.removeItem('admin_token');
+    }
+  }
+
+  if (document.getElementById('adminUser')) {
+    document.getElementById('adminUser').textContent = '管理员';
+  }
+  document.getElementById('adminLoginScreen').style.display = 'flex';
+  document.getElementById('adminMainShell').style.display = 'none';
 }
 
 async function getAuthHeaders(includeContentType = true) {
   let token = localStorage.getItem('admin_token');
   if (!token) {
-    try {
-      const res = await fetch(`${API_BASE}/auth/login/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: 'admin', password: 'admin123' }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        token = data.tokens.access;
-        localStorage.setItem('admin_token', token);
-      }
-    } catch (e) {}
+    const data = await tryAdminLogin();
+    token = data?.tokens?.access || null;
   }
   const headers = {};
   if (includeContentType) headers['Content-Type'] = 'application/json';
@@ -196,7 +265,7 @@ async function loadDashboard() {
     const recent = [...podcasts].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
     document.getElementById('recentPodcasts').innerHTML = recent.map(p => `
       <div class="quick-item">
-        ${p.cover_image ? `<img src="${MEDIA_BASE}${p.cover_image}" class="quick-cover" alt="">` : '<div class="quick-cover" style="background:#eee"></div>'}
+        ${p.cover_image ? `<img src="${resolveMediaUrl(p.cover_image)}" class="quick-cover" alt="">` : '<div class="quick-cover" style="background:#eee"></div>'}
         <span class="quick-title">${esc(p.title)}</span>
         <span class="quick-meta">${p.category_name || ''}</span>
       </div>
@@ -243,7 +312,7 @@ function renderPodcastTable(data) {
   const diffLabels = { beginner: '初级', intermediate: '中级', advanced: '高级' };
   tbody.innerHTML = data.map(p => `
     <tr>
-      <td>${p.cover_image ? `<img src="${MEDIA_BASE}${p.cover_image}" class="table-cover" alt="">` : '<div class="table-cover" style="background:#eee;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa">无图</div>'}</td>
+      <td>${p.cover_image ? `<img src="${resolveMediaUrl(p.cover_image)}" class="table-cover" alt="">` : '<div class="table-cover" style="background:#eee;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa">无图</div>'}</td>
       <td><strong>${esc(p.title)}</strong></td>
       <td>${esc(p.author || '-')}</td>
       <td>${esc(p.category_name || '-')}</td>
@@ -283,7 +352,7 @@ async function openPodcastModal(podcastId = null) {
       document.getElementById('podcastFeatured').checked = !!p.is_featured;
       document.getElementById('podcastActive').checked = p.is_active !== undefined ? p.is_active : true;
       if (p.cover_image) {
-        document.getElementById('podcastCoverPreview').innerHTML = `<img src="${MEDIA_BASE}${p.cover_image}" alt="预览">`;
+        document.getElementById('podcastCoverPreview').innerHTML = `<img src="${resolveMediaUrl(p.cover_image)}" alt="预览">`;
       }
       document.getElementById('podcastSaveBtn').textContent = '更新';
     }
@@ -453,6 +522,7 @@ async function openEpisodeModal(episodeId = null) {
       document.getElementById('episodeNumber').value = ep.episode_number || 0;
       document.getElementById('episodePublishDate').value = ep.publish_date || '';
       document.getElementById('episodeAudioUrl').value = ep.audio_url || '';
+      document.getElementById('episodeAudioFile').value = '';
       document.getElementById('episodeSubEn').value = ep.subtitle_en || '';
       document.getElementById('episodeSubZh').value = ep.subtitle_zh || '';
       document.getElementById('episodeActive').checked = ep.is_active !== undefined ? ep.is_active : true;
@@ -469,6 +539,7 @@ async function openEpisodeModal(episodeId = null) {
 async function saveEpisode(e) {
   e.preventDefault();
   const id = document.getElementById('episodeId').value;
+  const fileInput = document.getElementById('episodeAudioFile');
   const data = {
     podcast: parseInt(document.getElementById('episodePodcast').value),
     title: document.getElementById('episodeTitle').value,
@@ -482,8 +553,31 @@ async function saveEpisode(e) {
     is_active: document.getElementById('episodeActive').checked,
   };
   try {
-    if (id) { await apiPatch('/episodes/' + id + '/', data); showToast('节目更新成功', 'success'); }
-    else { await apiPost('/episodes/', data); showToast('节目创建成功', 'success'); }
+    if (id) {
+      await apiPatch('/episodes/' + id + '/', data);
+      if (fileInput && fileInput.files.length > 0) {
+        const formData = new FormData();
+        formData.append('audio_file', fileInput.files[0]);
+        await fetch(`${API_BASE}/episodes/${id}/`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` },
+          body: formData,
+        });
+      }
+      showToast('节目更新成功', 'success');
+    } else {
+      const created = await apiPost('/episodes/', data);
+      if (fileInput && fileInput.files.length > 0 && created && created.id) {
+        const formData = new FormData();
+        formData.append('audio_file', fileInput.files[0]);
+        await fetch(`${API_BASE}/episodes/${created.id}/`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` },
+          body: formData,
+        });
+      }
+      showToast('节目创建成功', 'success');
+    }
     closeModal('episodeModal'); loadEpisodes();
   } catch (error) { showToast('保存失败: ' + error.message, 'error'); }
 }

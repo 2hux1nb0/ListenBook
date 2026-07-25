@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ListenLeap Admin Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════ LOGIN SCREEN ═══════════════════════════════════════ -->
+<div id="login-screen" class="login-screen">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="login-logo">
+        <i class="fa-solid fa-wave-square"></i>
+      </div>
+      <h1 class="login-title">ListenLeap</h1>
+      <p class="login-subtitle">Admin Studio · 英语播客听力学习平台</p>
+    </div>
+    <form id="login-form" class="login-form" novalidate>
+      <div class="form-group">
+        <label for="login-username">用户名</label>
+        <div class="input-wrapper">
+          <i class="fa-solid fa-user"></i>
+          <input type="text" id="login-username" name="username" placeholder="请输入用户名" autocomplete="username" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="login-password">密码</label>
+        <div class="input-wrapper">
+          <i class="fa-solid fa-lock"></i>
+          <input type="password" id="login-password" name="password" placeholder="请输入密码" autocomplete="current-password" required>
+        </div>
+      </div>
+      <div id="login-error" class="login-error" role="alert" aria-live="polite"></div>
+      <button type="submit" id="login-btn" class="btn-login">
+        <span class="btn-text">登录</span>
+        <span class="btn-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>
+      </button>
+    </form>
+    <p class="login-hint">默认账号: <strong>admin</strong> / <strong>admin123456</strong></p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ APP SHELL ════════════════════════════════════════ -->
+<div id="app-shell" class="app-shell hidden">
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-icon">
+          <i class="fa-solid fa-wave-square"></i>
+        </div>
+        <div class="sidebar-logo-text">
+          <span class="sidebar-logo-name">ListenLeap</span>
+          <span class="sidebar-logo-tag">Admin Studio</span>
+        </div>
+      </div>
+    </div>
+    <nav class="sidebar-nav" aria-label="主导航">
+      <ul class="nav-list" role="list">
+        <li class="nav-item" data-page="dashboard">
+          <a href="#" class="nav-link active" data-nav="dashboard">
+            <i class="fa-solid fa-chart-pie"></i>
+            <span>仪表盘</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="podcasts">
+          <a href="#" class="nav-link" data-nav="podcasts">
+            <i class="fa-solid fa-podcast"></i>
+            <span>播客管理</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="episodes">
+          <a href="#" class="nav-link" data-nav="episodes">
+            <i class="fa-solid fa-headphones"></i>
+            <span>节目管理</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="categories">
+          <a href="#" class="nav-link" data-nav="categories">
+            <i class="fa-solid fa-layer-group"></i>
+            <span>分类管理</span>
+          </a>
+        </li>
+        <li class="nav-item" data-page="users">
+          <a href="#" class="nav-link" data-nav="users">
+            <i class="fa-solid fa-users"></i>
+            <span>用户管理</span>
+          </a>
+        </li>
+      </ul>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-actions">
+        <button id="theme-toggle" class="sidebar-action-btn" title="切换主题" aria-label="切换明暗主题">
+          <i class="fa-solid fa-moon" id="theme-icon"></i>
+          <span>深色模式</span>
+        </button>
+        <a href="/" class="sidebar-action-btn" target="_blank" rel="noopener" title="查看前台">
+          <i class="fa-solid fa-external-link-alt"></i>
+          <span>查看前台</span>
+        </a>
+        <a href="/admin/" class="sidebar-action-btn" target="_blank" rel="noopener" title="Django Admin">
+          <i class="fa-solid fa-cog"></i>
+          <span>Django Admin</span>
+        </a>
+      </div>
+      <div class="sidebar-user">
+        <div class="sidebar-user-avatar">
+          <i class="fa-solid fa-user-shield"></i>
+        </div>
+        <div class="sidebar-user-info">
+          <span class="sidebar-user-name" id="sidebar-username">Admin</span>
+          <span class="sidebar-user-role">超级管理员</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Area -->
+  <div class="main-area">
+
+    <!-- Header -->
+    <header class="top-header">
+      <div class="header-left">
+        <button id="sidebar-toggle" class="sidebar-toggle-btn" aria-label="切换侧边栏">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+        <h1 class="page-title" id="page-title">仪表盘</h1>
+      </div>
+      <div class="header-right">
+        <button id="header-refresh-btn" class="header-icon-btn" title="刷新当前页面" aria-label="刷新">
+          <i class="fa-solid fa-rotate-right" id="header-refresh-icon"></i>
+        </button>
+        <div class="header-admin">
+          <div class="header-admin-avatar">
+            <i class="fa-solid fa-shield-halved"></i>
+          </div>
+          <span class="header-admin-name" id="header-admin-name">Admin</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <main class="content" id="content">
+
+      <!-- Dashboard Page -->
+      <section id="page-dashboard" class="page active">
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card loading">
+            <div class="stat-icon stat-icon-podcast"><i class="fa-solid fa-podcast"></i></div>
+            <div class="stat-info">
+              <span class="stat-value">—</span>
+              <span class="stat-label">总播客数</span>
+            </div>
+          </div>
+          <div class="stat-card loading">
+            <div class="stat-icon stat-icon-episode"><i class="fa-solid fa-headphones"></i></div>
+            <div class="stat-info">
+              <span class="stat-value">—</span>
+              <span class="stat-label">总节目数</span>
+            </div>
+          </div>
+          <div class="stat-card loading">
+            <div class="stat-icon stat-icon-category"><i class="fa-solid fa-layer-group"></i></div>
+            <div class="stat-info">
+              <span class="stat-value">—</span>
+              <span class="stat-label">分类数</span>
+            </div>
+          </div>
+          <div class="stat-card loading">
+            <div class="stat-icon stat-icon-user"><i class="fa-solid fa-users"></i></div>
+            <div class="stat-info">
+              <span class="stat-value"><a href="/admin/accounts/user/" target="_blank" class="stat-link">查看 →</a></span>
+              <span class="stat-label">用户数</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-grid">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fa-solid fa-chart-bar"></i> 播客难度分布</h3>
+            </div>
+            <div class="card-body" id="difficulty-chart">
+              <div class="chart-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中…</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i class="fa-solid fa-clock-rotate-left"></i> 最近添加</h3>
+            </div>
+            <div class="card-body" id="recent-podcasts">
+              <div class="chart-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中…</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Podcasts Page -->
+      <section id="page-podcasts" class="page">
+        <div class="page-toolbar">
+          <div class="toolbar-filters">
+            <div class="search-input-wrap">
+              <i class="fa-solid fa-search"></i>
+              <input type="search" id="podcast-search" class="search-input" placeholder="搜索播客…">
+            </div>
+            <select id="podcast-difficulty-filter" class="filter-select">
+              <option value="">全部难度</option>
+              <option value="beginner">初级</option>
+              <option value="intermediate">中级</option>
+              <option value="advanced">高级</option>
+            </select>
+            <select id="podcast-status-filter" class="filter-select">
+              <option value="">全部状态</option>
+              <option value="active">已上架</option>
+              <option value="inactive">已下架</option>
+            </select>
+          </div>
+          <button id="btn-add-podcast" class="btn btn-primary">
+            <i class="fa-solid fa-plus"></i> 添加播客
+          </button>
+        </div>
+        <div class="card">
+          <div class="table-responsive">
+            <table class="data-table" id="podcasts-table">
+              <thead>
+                <tr>
+                  <th style="width:56px">封面</th>
+                  <th>标题</th>
+                  <th>作者</th>
+                  <th>分类</th>
+                  <th>难度</th>
+                  <th style="width:60px">节目</th>
+                  <th style="width:60px">推荐</th>
+                  <th style="width:70px">状态</th>
+                  <th style="width:180px">操作</th>
+                </tr>
+              </thead>
+              <tbody id="podcasts-tbody">
+                <tr><td colspan="9" class="table-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-footer" id="podcasts-pagination"></div>
+        </div>
+      </section>
+
+      <!-- Episodes Page -->
+      <section id="page-episodes" class="page">
+        <div class="page-toolbar">
+          <div class="toolbar-filters">
+            <div class="search-input-wrap">
+              <i class="fa-solid fa-search"></i>
+              <input type="search" id="episode-search" class="search-input" placeholder="搜索节目…">
+            </div>
+            <select id="episode-podcast-filter" class="filter-select">
+              <option value="">全部播客</option>
+            </select>
+            <select id="episode-status-filter" class="filter-select">
+              <option value="">全部状态</option>
+              <option value="active">已上架</option>
+              <option value="inactive">已下架</option>
+            </select>
+          </div>
+          <button id="btn-add-episode" class="btn btn-primary">
+            <i class="fa-solid fa-plus"></i> 添加节目
+          </button>
+        </div>
+        <div class="card">
+          <div class="table-responsive">
+            <table class="data-table" id="episodes-table">
+              <thead>
+                <tr>
+                  <th>标题</th>
+                  <th>所属播客</th>
+                  <th style="width:80px">时长</th>
+                  <th style="width:60px">集号</th>
+                  <th style="width:80px">播放数</th>
+                  <th style="width:70px">状态</th>
+                  <th style="width:160px">操作</th>
+                </tr>
+              </thead>
+              <tbody id="episodes-tbody">
+                <tr><td colspan="7" class="table-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-footer" id="episodes-pagination"></div>
+        </div>
+      </section>
+
+      <!-- Categories Page -->
+      <section id="page-categories" class="page">
+        <div class="page-toolbar">
+          <div class="toolbar-filters">
+            <div class="search-input-wrap">
+              <i class="fa-solid fa-search"></i>
+              <input type="search" id="category-search" class="search-input" placeholder="搜索分类…">
+            </div>
+          </div>
+          <button id="btn-add-category" class="btn btn-primary">
+            <i class="fa-solid fa-plus"></i> 添加分类
+          </button>
+        </div>
+        <div class="card">
+          <div class="table-responsive">
+            <table class="data-table" id="categories-table">
+              <thead>
+                <tr>
+                  <th style="width:80px">颜色</th>
+                  <th>名称</th>
+                  <th>Slug</th>
+                  <th style="width:60px">图标</th>
+                  <th style="width:60px">排序</th>
+                  <th style="width:70px">状态</th>
+                  <th style="width:180px">操作</th>
+                </tr>
+              </thead>
+              <tbody id="categories-tbody">
+                <tr><td colspan="7" class="table-loading"><i class="fa-solid fa-spinner fa-spin"></i> 加载中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Users Page -->
+      <section id="page-users" class="page">
+        <div class="card users-info-card">
+          <div class="users-info-icon">
+            <i class="fa-solid fa-user-shield"></i>
+          </div>
+          <h2 class="users-info-title">用户管理</h2>
+          <p class="users-info-desc">
+            用户数据（账号、权限、订阅记录等）统一由 Django Admin 管理。<br>
+            此处不做展示和管理操作，请点击下方按钮前往 Django Admin 后台。
+          </p>
+          <a href="/admin/accounts/user/" target="_blank" rel="noopener" class="btn btn-primary btn-lg">
+            <i class="fa-solid fa-external-link-alt"></i> 前往 Django Admin 管理用户
+          </a>
+          <div class="users-admin-link-row">
+            <a href="/admin/" target="_blank" rel="noopener" class="users-admin-link">
+              <i class="fa-solid fa-cog"></i> Django 后台管理 →
+            </a>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ MODALS ════════════════════════════════════════ -->
+
+<!-- Podcast Add/Edit Modal -->
+<div id="modal-podcast" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-podcast-title">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-podcast-title">添加播客</h2>
+      <button class="modal-close" data-close-modal="modal-podcast" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form id="form-podcast" class="modal-form" novalidate>
+      <input type="hidden" id="podcast-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="podcast-title">标题 <span class="required">*</span></label>
+          <input type="text" id="podcast-title" required placeholder="播客标题">
+        </div>
+        <div class="form-group">
+          <label for="podcast-author">作者</label>
+          <input type="text" id="podcast-author" placeholder="作者名称">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="podcast-description">描述</label>
+        <textarea id="podcast-description" rows="3" placeholder="播客简介…"></textarea>
+      </div>
+      <div class="form-group">
+        <label>封面图片</label>
+        <div class="cover-upload-area">
+          <div class="cover-preview-wrap">
+            <img id="podcast-cover-preview" class="cover-preview-img" src="" alt="封面预览" style="display:none">
+            <div class="cover-preview-placeholder" id="podcast-cover-placeholder">
+              <i class="fa-solid fa-image"></i>
+              <span>预览区</span>
+            </div>
+          </div>
+          <div class="cover-upload-controls">
+            <input type="url" id="podcast-cover-url" class="form-control" placeholder="或输入封面 URL…">
+            <div class="upload-divider"><span>或</span></div>
+            <div class="file-upload-wrap">
+              <input type="file" id="podcast-cover-file" accept="image/*" class="file-input">
+              <label for="podcast-cover-file" class="btn btn-outline btn-sm">
+                <i class="fa-solid fa-upload"></i> 选择本地文件
+              </label>
+              <span class="file-name" id="podcast-cover-filename"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="podcast-category">分类 <span class="required">*</span></label>
+          <select id="podcast-category" required>
+            <option value="">请选择分类…</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="podcast-difficulty">难度</label>
+          <select id="podcast-difficulty">
+            <option value="beginner">初级</option>
+            <option value="intermediate">中级</option>
+            <option value="advanced">高级</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="podcast-language">语言</label>
+          <select id="podcast-language">
+            <option value="en">英语</option>
+            <option value="zh">中文</option>
+            <option value="ja">日语</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row form-row-toggle">
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <input type="checkbox" id="podcast-featured" class="toggle-input">
+            <span class="toggle-switch"></span>
+            <span class="toggle-text">推荐到首页</span>
+          </label>
+        </div>
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <input type="checkbox" id="podcast-active" class="toggle-input" checked>
+            <span class="toggle-switch"></span>
+            <span class="toggle-text">上架状态</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close-modal="modal-podcast">取消</button>
+        <button type="submit" id="podcast-submit-btn" class="btn btn-primary">
+          <span class="btn-text">保存</span>
+          <span class="btn-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Episode Add/Edit Modal -->
+<div id="modal-episode" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-episode-title">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-episode-title">添加节目</h2>
+      <button class="modal-close" data-close-modal="modal-episode" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form id="form-episode" class="modal-form" novalidate>
+      <input type="hidden" id="episode-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="episode-podcast">所属播客 <span class="required">*</span></label>
+          <select id="episode-podcast" required>
+            <option value="">请选择播客…</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="episode-number">集号</label>
+          <input type="number" id="episode-number" min="1" placeholder="1">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="episode-title">标题 <span class="required">*</span></label>
+          <input type="text" id="episode-title" required placeholder="节目标题">
+        </div>
+        <div class="form-group">
+          <label for="episode-publish-date">发布日期</label>
+          <input type="date" id="episode-publish-date">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="episode-desc">描述</label>
+        <textarea id="episode-desc" rows="2" placeholder="节目简介…"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="episode-duration">时长（秒）</label>
+          <input type="number" id="episode-duration" min="0" placeholder="例：3600">
+        </div>
+        <div class="form-group">
+          <label>音频文件</label>
+          <div class="audio-upload-row">
+            <input type="url" id="episode-audio-url" class="form-control" placeholder="或输入音频 URL…">
+            <div class="upload-divider"><span>或</span></div>
+            <div class="file-upload-wrap">
+              <input type="file" id="episode-audio-file" accept="audio/*" class="file-input">
+              <label for="episode-audio-file" class="btn btn-outline btn-sm">
+                <i class="fa-solid fa-upload"></i> 上传音频
+              </label>
+              <span class="file-name" id="episode-audio-filename"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="episode-subtitle-en">英语字幕</label>
+        <textarea id="episode-subtitle-en" rows="4" placeholder="英语字幕内容（纯文本）…"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="episode-subtitle-zh">中文翻译</label>
+        <textarea id="episode-subtitle-zh" rows="4" placeholder="中文翻译内容（纯文本）…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="toggle-label">
+          <input type="checkbox" id="episode-active" class="toggle-input" checked>
+          <span class="toggle-switch"></span>
+          <span class="toggle-text">上架状态</span>
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close-modal="modal-episode">取消</button>
+        <button type="submit" id="episode-submit-btn" class="btn btn-primary">
+          <span class="btn-text">保存</span>
+          <span class="btn-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Category Add/Edit Modal -->
+<div id="modal-category" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-category-title">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-category-title">添加分类</h2>
+      <button class="modal-close" data-close-modal="modal-category" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form id="form-category" class="modal-form" novalidate>
+      <input type="hidden" id="category-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="category-name">名称 <span class="required">*</span></label>
+          <input type="text" id="category-name" required placeholder="分类名称">
+        </div>
+        <div class="form-group">
+          <label for="category-slug">Slug <span class="required">*</span></label>
+          <input type="text" id="category-slug" required placeholder="url-slug" pattern="[a-z0-9-]+">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="category-icon">图标 (Font Awesome 类名)</label>
+          <input type="text" id="category-icon" placeholder="fa-solid fa-microphone">
+        </div>
+        <div class="form-group">
+          <label for="category-color">颜色</label>
+          <div class="color-input-row">
+            <input type="color" id="category-color" value="#5858f5" class="color-picker">
+            <input type="text" id="category-color-text" class="form-control" value="#5858f5" placeholder="#5858f5">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="category-sort">排序</label>
+          <input type="number" id="category-sort" min="0" value="0" placeholder="0">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="toggle-label">
+          <input type="checkbox" id="category-active" class="toggle-input" checked>
+          <span class="toggle-switch"></span>
+          <span class="toggle-text">激活状态</span>
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close-modal="modal-category">取消</button>
+        <button type="submit" id="category-submit-btn" class="btn btn-primary">
+          <span class="btn-text">保存</span>
+          <span class="btn-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Confirm Delete Modal -->
+<div id="modal-confirm" class="modal-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="modal-confirm-title">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-confirm-title">确认删除</h2>
+      <button class="modal-close" data-close-modal="modal-confirm" aria-label="关闭"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-message">确定要删除此项吗？此操作不可撤销。</p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" data-close-modal="modal-confirm">取消</button>
+      <button type="button" id="confirm-delete-btn" class="btn btn-danger">
+        <span class="btn-text">确认删除</span>
+        <span class="btn-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

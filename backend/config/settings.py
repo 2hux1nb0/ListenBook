@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = BASE_DIR.parent  # /mnt/d/ShiZhe/ListenBook
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-listenleap-dev-key-change-in-production-2024')
 
@@ -95,6 +96,9 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
+    PROJECT_ROOT / 'css',
+    PROJECT_ROOT / 'js',
+    PROJECT_ROOT / 'images',
 ]
 
 MEDIA_URL = '/media/'

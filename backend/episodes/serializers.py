@@ -10,9 +10,9 @@ class EpisodeListSerializer(serializers.ModelSerializer):
         model = Episode
         fields = [
             'id', 'title', 'podcast', 'podcast_title', 'description',
-            'audio_url', 'audio_duration', 'duration_display',
+            'audio_file', 'audio_url', 'audio_duration', 'duration_display',
             'episode_number', 'season_number', 'publish_date',
-            'is_active', 'play_count'
+            'is_active', 'play_count', 'subtitle_en', 'subtitle_zh'
         ]
 
 

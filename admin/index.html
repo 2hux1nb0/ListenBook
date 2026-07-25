@@ -11,10 +11,35 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap"></noscript>
-  <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="admin.css?v=20260725">
 </head>
 <body>
   <div id="admin-app">
+    <div id="adminLoginScreen" class="admin-login-screen">
+      <div class="admin-login-card">
+        <div class="admin-login-logo">
+          <img src="../images/logo.svg" alt="ListenLeap" class="admin-logo-img">
+          <div>
+            <h2>ListenLeap 管理后台</h2>
+            <p>请输入管理员账号密码登录</p>
+          </div>
+        </div>
+        <form id="adminLoginForm" class="admin-login-form">
+          <label>
+            <span>用户名</span>
+            <input type="text" id="adminLoginUsername" value="admin" required>
+          </label>
+          <label>
+            <span>密码</span>
+            <input type="password" id="adminLoginPassword" value="admin123456" required>
+          </label>
+          <button type="submit" class="admin-btn admin-btn-primary admin-btn-block">登录</button>
+          <p id="adminLoginError" class="admin-login-error"></p>
+        </form>
+      </div>
+    </div>
+
+    <div id="adminMainShell" class="admin-main-shell" style="display:none;">
     <!-- Sidebar -->
     <aside class="admin-sidebar" id="adminSidebar">
       <div class="admin-sidebar-top">
@@ -279,6 +304,7 @@
         </div>
       </div>
     </main>
+    </div>
   </div>
 
   <!-- Podcast Modal -->
@@ -399,8 +425,15 @@
           </div>
         </div>
         <div class="form-group">
-          <label>音频 URL</label>
-          <input type="text" id="episodeAudioUrl" placeholder="https://...">
+          <label>音频文件</label>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <input type="text" id="episodeAudioUrl" placeholder="可填音频 URL，或在下方上传文件">
+            <label for="episodeAudioFile" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:var(--bg-light);border:1px dashed var(--border-color-dark);border-radius:8px;cursor:pointer;font-size:13px;color:var(--main-blue);font-weight:500;transition:all 0.2s;max-width:220px" onmouseover="this.style.borderColor='var(--main-blue)';this.style.background='rgba(88,88,245,0.04)'" onmouseout="this.style.borderColor='var(--border-color-dark)';this.style.background='var(--bg-light)'">
+              <i class="fas fa-cloud-upload-alt"></i> 上传音频文件
+            </label>
+            <input type="file" id="episodeAudioFile" accept="audio/*" style="display:none">
+            <small style="color:var(--text-muted);font-size:11px">支持 mp3、m4a、wav 等音频文件</small>
+          </div>
         </div>
         <div class="form-group">
           <label>英语字幕</label>
@@ -480,6 +513,6 @@
   <!-- Toast -->
   <div id="adminToast" class="admin-toast"></div>
 
-  <script src="admin.js"></script>
+  <script src="admin.js?v=20260725"></script>
 </body>
 </html>

@@ -6,6 +6,7 @@ class Episode(models.Model):
     podcast = models.ForeignKey('podcasts.Podcast', on_delete=models.CASCADE, related_name='episodes')
     title = models.CharField(max_length=500)
     description = models.TextField(blank=True, default='')
+    audio_file = models.FileField(upload_to='episodes/audio/', blank=True, null=True)
     audio_url = models.URLField(blank=True, default='')
     audio_duration = models.IntegerField(help_text='Duration in seconds', default=0)
     audio_size = models.BigIntegerField(default=0)

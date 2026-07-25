@@ -313,7 +313,7 @@
       <div id="detailView" class="view">
         <div class="detail-container">
           <div class="detail-left">
-            <button class="back-btn" id="backBtn">
+            <button class="back-btn" id="backBtn" onclick="goBack()">
               <i class="fas fa-arrow-left"></i>
               <span>返回</span>
             </button>
@@ -325,7 +325,7 @@
               <div class="detail-meta">
                 <span class="detail-author" id="detailAuthor"><i class="fas fa-user"></i> </span>
                 <span class="detail-episodes" id="detailEpisodes"><i class="fas fa-list"></i> </span>
-                <span class="detail-category" id="detailCategory"><i class="fas fa-tag"></i> </span>
+                <span class="detail-category" id="detailCategories"><i class="fas fa-tag"></i> </span>
               </div>
               <div class="detail-level" id="detailLevel"></div>
               <p class="detail-desc" id="detailDesc"></p>
@@ -400,8 +400,9 @@
 
     <!-- Audio Player Bar -->
     <div class="player-bar" id="playerBar" style="display:none">
-      <div class="player-progress-bar">
+      <div class="player-progress-bar" id="playerProgressBar">
         <div class="player-progress" id="playerProgress"></div>
+        <div class="player-progress-label" id="playerProgressLabel" aria-hidden="true">00:00</div>
       </div>
       <div class="player-content">
         <div class="player-cover">
@@ -412,16 +413,22 @@
           <div class="player-podcast" id="playerPodcast"></div>
         </div>
         <div class="player-controls">
-          <button class="player-btn" id="playerRewind">
-            <i class="fas fa-backward"></i>
-            <span class="btn-label">10s</span>
+          <button class="player-btn player-btn-nav" id="playerPrev" aria-label="上一首">
+            <i class="fas fa-backward-step"></i>
           </button>
-          <button class="player-btn player-btn-main" id="playerPlayPause">
+          <button class="player-btn player-btn-seek" id="playerRewind" aria-label="后退10秒">
+            <span class="btn-label">-10s</span>
+            <i class="fas fa-rotate-left"></i>
+          </button>
+          <button class="player-btn player-btn-main" id="playerPlayPause" aria-label="播放/暂停">
             <i class="fas fa-play"></i>
           </button>
-          <button class="player-btn" id="playerForward">
-            <span class="btn-label">10s</span>
-            <i class="fas fa-forward"></i>
+          <button class="player-btn player-btn-seek" id="playerForward" aria-label="快进10秒">
+            <i class="fas fa-rotate-right"></i>
+            <span class="btn-label">+10s</span>
+          </button>
+          <button class="player-btn player-btn-nav" id="playerNext" aria-label="下一首">
+            <i class="fas fa-forward-step"></i>
           </button>
         </div>
         <div class="player-time">
@@ -432,6 +439,9 @@
         <div class="player-extra">
           <button class="player-btn player-note-btn" id="playerNoteBtn" title="添加笔记">
             <i class="fas fa-pen"></i>
+          </button>
+          <button class="player-btn player-transcript-btn" id="playerTranscriptBtn" title="字幕/文稿">
+            <i class="fas fa-file-lines"></i>
           </button>
           <div class="player-volume">
             <button class="player-btn" id="playerVolumeBtn">
@@ -519,6 +529,20 @@
         <div class="note-episode-info" id="noteEpisodeInfo"></div>
         <textarea id="noteContent" placeholder="写下你的笔记..." rows="5"></textarea>
         <button class="auth-submit-btn" id="noteSubmit">保存笔记</button>
+      </div>
+    </div>
+
+    <!-- Transcript Modal -->
+    <div class="modal-overlay" id="transcriptModal" style="display:none">
+      <div class="modal-content transcript-modal">
+        <button class="modal-close" id="transcriptModalClose"><i class="fas fa-times"></i></button>
+        <h2 class="transcript-title" id="transcriptTitle">文稿</h2>
+        <div class="transcript-actions">
+          <button class="transcript-mode-btn active" id="transcriptBilingualBtn">双语</button>
+          <button class="transcript-mode-btn" id="transcriptEnBtn">英文</button>
+          <button class="transcript-mode-btn" id="transcriptZhBtn">中文</button>
+        </div>
+        <div class="transcript-body" id="transcriptBody"></div>
       </div>
     </div>
   </div>

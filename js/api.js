@@ -1,6 +1,27 @@
 // ===== ListenLeap API Client =====
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = (() => {
+  const host = window.location.hostname || 'localhost';
+  if (host === 'listenbook.local' || host === 'localhost' || host === '127.0.0.1') {
+    return `http://${host}:8000/api`;
+  }
+  return 'http://localhost:8000/api';
+})();
+const MEDIA_BASE = (() => {
+  const host = window.location.hostname || 'localhost';
+  if (host === 'listenbook.local' || host === 'localhost' || host === '127.0.0.1') {
+    return `http://${host}:8000`;
+  }
+  return 'http://localhost:8000';
+})();
+
+function resolveMediaUrl(value) {
+  if (!value) return 'https://picsum.photos/seed/default/200/200';
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith('/media/')) return `${MEDIA_BASE}${value}`;
+  if (value.startsWith('/')) return `${MEDIA_BASE}${value}`;
+  return `${MEDIA_BASE}/media/${value}`;
+}
 
 // API 请求封装
 async function apiRequest(endpoint, options = {}) {
@@ -155,9 +176,8 @@ async function addFavorite(podcastId) {
 }
 
 async function removeFavorite(podcastId) {
-  return await apiRequest('/favorites/', {
+  return await apiRequest(`/favorites/?podcast=${podcastId}`, {
     method: 'DELETE',
-    body: JSON.stringify({ podcast: podcastId }),
   });
 }
 
@@ -166,10 +186,10 @@ async function getNotes() {
   return await apiRequest('/notes/');
 }
 
-async function createNote(episodeId, content, timestamp) {
+async function createNote(episodeId, content, timestampSeconds) {
   return await apiRequest('/notes/', {
     method: 'POST',
-    body: JSON.stringify({ episode: episodeId, content, timestamp }),
+    body: JSON.stringify({ episode: episodeId, content, timestamp_seconds: timestampSeconds }),
   });
 }
 
@@ -184,13 +204,14 @@ async function getPlaybackHistory() {
   return await apiRequest('/playback/history/');
 }
 
-async function updatePlayback(episodeId, currentTime, duration) {
-  return await apiRequest('/playback/update/', {
+async function updatePlayback(episodeId, currentTime, duration, isCompleted = false) {
+  return await apiRequest('/playback/history/', {
     method: 'POST',
     body: JSON.stringify({ 
       episode: episodeId, 
-      current_time: currentTime, 
-      duration 
+      current_position: currentTime, 
+      duration, 
+      is_completed: isCompleted,
     }),
   });
 }
