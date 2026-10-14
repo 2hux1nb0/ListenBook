@@ -1,0 +1,26 @@
+{
+  "_comment": "爬虫配置示例。复制为 config.json 后填入真实账号密码。config.json 已在 .gitignore 里排除，不会被提交。",
+
+  "backend_url": "https://piterju.pythonanywhere.com",
+  "username": "<Django 管理员账号>",
+  "password": "<Django 管理员密码>",
+
+  "per_source_limit": 2,
+  "max_asr_per_run": 20,
+  "backfill_limit": 10,
+  "max_audio_mb": 90,
+  "audio_cache_days": 3,
+  "asr_model": "small",
+  "translate": true,
+  "asr": true,
+  "official_transcript": true,
+
+  "_notes": {
+    "per_source_limit": "每个源每次最多抓几集新内容",
+    "max_asr_per_run": "每轮最多对几集做语音转写。注意是「每轮」，每轮开始会清零。8 个源 × 2 集 = 16 集/天，所以设 20 保证一天的新内容都能拿到字幕；每集约 100 秒，整轮约 30-40 分钟",
+    "backfill_limit": "补字幕模式（--backfill）下每个播客最多补几集",
+    "max_audio_mb": "超过这个大小的单集跳过转写。90MB 约对应 60-90 分钟音频（ASR 约 5-8 分钟）",
+    "audio_cache_days": "音频缓存保留几天。字幕入库后 mp3 就没用了（重下约 10 秒），不清会以每月近 10GB 膨胀",
+    "asr_model": "tiny/base/small/medium —— 越大越准越慢"
+  }
+}

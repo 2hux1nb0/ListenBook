@@ -24,9 +24,17 @@
   padding: 0;
 }
 
+/* NOTE: was `html, body { height:100%; overflow-x:hidden }` — that clamped
+   <html> to the viewport and (per CSS spec, overflow-x:hidden computes
+   overflow-y:auto) turned <body> into an independent inner scroller, so
+   window.scrollTo()/scrollY silently no-oped AND position:sticky anchored to
+   the wrong scroller. Keep overflow clipping on <html> ONLY; <body> must stay
+   a plain element for document scrolling + sticky to work. */
 html, body {
   width: 100%;
-  height: 100%;
+  min-height: 100%;
+}
+html {
   overflow-x: hidden;
 }
 
@@ -979,6 +987,10 @@ input { font-family: inherit; }
     margin-left: 0;
   }
 
+  .player-bar {
+    left: 0;
+  }
+
   .header-center {
     margin: 0 12px;
   }
@@ -1082,6 +1094,10 @@ input { font-family: inherit; }
 
   .main-content {
     margin-left: 64px;
+  }
+
+  .player-bar {
+    left: 64px;
   }
 
   .podcast-grid {
@@ -1442,67 +1458,81 @@ input { font-family: inherit; }
 .player-bar {
   position: fixed;
   bottom: 0;
-  left: 0;
+  left: 220px;
   right: 0;
   background: var(--bg-white);
-  border-top: 1px solid var(--border-color);
   z-index: 1000;
   box-shadow: 0 -2px 16px rgba(0,0,0,0.08);
+  transition: left 0.3s ease;
+}
+
+/* 播放条跟随侧边栏宽度对齐，避免被左侧菜单栏覆盖 */
+.sidebar.collapsed ~ .player-bar {
+  left: 64px;
 }
 
 .player-progress-bar {
   position: relative;
   width: 100%;
   height: 14px;
-  margin-top: -3px;
-  padding-top: 3px;
+  margin: 0;
+  padding: 4px 0;
   background: transparent;
   cursor: pointer;
   overflow: visible;
-  display: flex;
-  align-items: center;
+  touch-action: none;
 }
 
+/* Track — one clean, continuous line; doubles as the player-bar's top divider */
 .player-progress-bar::before {
   content: '';
   position: absolute;
-  inset: 3px 0 0 0;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   height: 5px;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(148, 163, 184, 0.22), rgba(99, 102, 241, 0.18));
+  background: rgba(148, 163, 184, 0.4);
   transition: height 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 }
 
+/* Fill — perfectly overlaid on the SAME line as the track (no double line) */
 .player-progress {
-  position: relative;
-  z-index: 2;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
   height: 5px;
-  background: linear-gradient(90deg, var(--main-blue), #6f7dff);
   width: 0;
-  transition: width 0.1s linear, height 0.16s ease;
   border-radius: 999px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.2) inset;
+  background: linear-gradient(90deg, var(--main-blue), #6f7dff);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18) inset, 0 2px 8px rgba(99, 102, 241, 0.25);
+  transition: width 0.1s linear, height 0.16s ease;
+  z-index: 2;
 }
 
+/* Grow smoothly on hover / drag */
 .player-progress-bar:hover::before,
-.player-progress-bar.is-dragging::before {
-  height: 7px;
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.12), 0 6px 18px rgba(99, 102, 241, 0.12);
-}
-
+.player-progress-bar.is-dragging::before,
 .player-progress-bar:hover .player-progress,
 .player-progress-bar.is-dragging .player-progress {
   height: 7px;
 }
+.player-progress-bar:hover::before,
+.player-progress-bar.is-dragging::before {
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.12), 0 6px 18px rgba(99, 102, 241, 0.14);
+}
 
+/* Seek handle — centered exactly on the playhead */
 .player-progress-bar::after {
   content: '';
   position: absolute;
   top: 50%;
-  left: calc(var(--seek-pos, 0%) - 8px);
+  left: var(--seek-pos, 0%);
   width: 16px;
   height: 16px;
-  transform: translateY(-50%) scale(0.9);
+  transform: translate(-50%, -50%) scale(0.85);
   border-radius: 50%;
   background: radial-gradient(circle at 30% 30%, #ffffff 0%, #f4f7ff 45%, #dfe7ff 100%);
   border: 2px solid rgba(99, 102, 241, 0.95);
@@ -1513,15 +1543,22 @@ input { font-family: inherit; }
   z-index: 3;
   will-change: transform, opacity, box-shadow;
 }
+.player-progress-bar:hover::after,
+.player-progress-bar.is-dragging::after {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.24), 0 0 0 4px rgba(99, 102, 241, 0.14);
+}
 
+/* Hover time label — shown ONLY while hovering / dragging, auto-hides on leave (pure CSS) */
 .player-progress-label {
   position: absolute;
   top: -30px;
   transform: translateX(-50%) translateY(4px);
-  padding: 5px 8px;
+  padding: 5px 9px;
   border-radius: 999px;
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
-  color: white;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.96));
+  color: #fff;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -1533,17 +1570,14 @@ input { font-family: inherit; }
   z-index: 4;
   will-change: transform, opacity;
 }
-
-.player-progress-label.visible {
+.player-progress-bar:hover .player-progress-label,
+.player-progress-bar.is-dragging .player-progress-label {
   opacity: 1;
   transform: translateX(-50%) translateY(-2px);
 }
-
-.player-progress-bar:hover::after,
-.player-progress-bar.is-dragging::after {
-  opacity: 1;
-  transform: translateY(-50%) scale(1);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.24), 0 0 0 4px rgba(99, 102, 241, 0.14);
+.player-progress-bar.no-duration .player-progress-label {
+  opacity: 0 !important;
+  pointer-events: none;
 }
 
 
@@ -1991,7 +2025,6 @@ input { font-family: inherit; }
 [data-theme="dark"] .program-card { background: var(--bg-light); }
 [data-theme="dark"] .player-bar {
   background: linear-gradient(180deg, rgba(30, 30, 46, 0.98), rgba(21, 23, 34, 0.98));
-  border-top-color: rgba(255,255,255,0.08);
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
 }
 [data-theme="dark"] .player-progress-bar::before {
@@ -2391,3 +2424,1056 @@ input { font-family: inherit; }
 @keyframes pop { 0% { transform: scale(.4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 .pay-success-title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
 .pay-success-sub { font-size: 13px; color: var(--text-muted); }
+
+/* ============================================================
+   Design Polish Layer — cohesive refinements (additive)
+   ============================================================ */
+:root {
+  --accent: #5858f5;
+  --accent-2: #7c5cff;
+  --bg-card: #ffffff;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --shadow-sm: 0 2px 8px rgba(15,23,42,.06);
+  --shadow-md: 0 8px 24px rgba(15,23,42,.08);
+  --shadow-lg: 0 18px 50px rgba(15,23,42,.14);
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+
+html { scroll-behavior: smooth; }
+
+::selection { background: rgba(88,88,245,.18); color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Refined scrollbars */
+* { scrollbar-width: thin; scrollbar-color: rgba(88,88,245,.35) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(88,88,245,.28); border-radius: 999px;
+  border: 2px solid transparent; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(88,88,245,.5); background-clip: padding-box; }
+
+/* Heading rhythm */
+h1, h2, h3, .pricing-hero-title, .page-title { letter-spacing: -.01em; }
+
+/* Cards — subtle, premium hover */
+.podcast-card, .program-card, .category-card, .vocab-card,
+.stats-card, .history-card, .blog-card, .category-page-card {
+  transition: transform .22s var(--ease), box-shadow .22s var(--ease), border-color .22s var(--ease);
+}
+.podcast-card:hover, .program-card:hover, .category-page-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+  border-color: rgba(88,88,245,.35);
+}
+.podcast-cover img, .program-cover img { transition: transform .4s var(--ease); }
+.podcast-card:hover .podcast-cover img,
+.program-card:hover .program-cover img { transform: scale(1.06); }
+
+/* Sidebar active item — gradient accent + indicator */
+.sidebar-item { position: relative; }
+.sidebar-item.active {
+  background: linear-gradient(90deg, rgba(88,88,245,.14), rgba(88,88,245,.04));
+  color: var(--accent);
+  font-weight: 700;
+}
+.sidebar-item.active .sidebar-icon { color: var(--accent); }
+.sidebar-item::before {
+  content: ''; position: absolute; left: 0; top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px; height: 60%; border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  transition: transform .2s var(--ease);
+}
+.sidebar-item.active::before { transform: translateY(-50%) scaleY(1); }
+
+/* Primary CTA buttons — gradient + tactile feedback */
+.auth-submit-btn:not(.secondary), .pricing-btn {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff; border: none; border-radius: 12px; font-weight: 700;
+  box-shadow: 0 8px 20px rgba(88,88,245,.28);
+  transition: transform .15s var(--ease), box-shadow .15s var(--ease), filter .15s var(--ease);
+}
+.auth-submit-btn:not(.secondary):hover, .pricing-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(88,88,245,.36);
+  filter: brightness(1.03);
+}
+.auth-submit-btn:not(.secondary):active, .pricing-btn:active {
+  transform: translateY(0) scale(.98);
+}
+
+/* Player bar — glass surface (no separate top line; the progress bar is the divider) */
+.player-bar {
+  backdrop-filter: saturate(1.4) blur(14px);
+  background: rgba(255,255,255,.86);
+}
+
+/* Pricing popular card — elegant glow */
+.pricing-card.popular {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 16px 40px rgba(88,88,245,.20);
+}
+.pricing-card.popular .pricing-name { color: var(--accent); }
+
+/* Modal — soft entrance */
+.modal { animation: modalIn .26s var(--ease); }
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(14px) scale(.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Empty states — friendlier accent */
+.empty-state i { color: var(--accent); opacity: .65; }
+
+/* ============================================================
+   Membership Page — QClaw-style redesign (light & dark aware)
+   ============================================================ */
+
+/* FIX: dark theme never overrode --bg-card (stuck at #fff from polish layer) */
+[data-theme="dark"] {
+  --bg-card: #20202f;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,.35);
+  --shadow-md: 0 8px 24px rgba(0,0,0,.45);
+  --shadow-lg: 0 18px 50px rgba(0,0,0,.55);
+}
+
+/* Ambient glow backdrop behind the hero (QClaw-like) */
+#membershipView { position: relative; padding-bottom: 36px; }
+#membershipView::before {
+  content: '';
+  position: absolute;
+  top: -30px; left: -20px; right: -20px; height: 430px;
+  pointer-events: none;
+  background:
+    radial-gradient(420px 260px at 16% 6%, rgba(88,88,245,.10), transparent 65%),
+    radial-gradient(480px 280px at 84% 2%, rgba(124,92,255,.10), transparent 65%),
+    radial-gradient(380px 230px at 50% 32%, rgba(56,189,248,.07), transparent 70%);
+}
+[data-theme="dark"] #membershipView::before {
+  background:
+    radial-gradient(460px 280px at 16% 6%, rgba(123,123,245,.20), transparent 65%),
+    radial-gradient(520px 300px at 84% 2%, rgba(149,95,255,.16), transparent 65%),
+    radial-gradient(400px 240px at 50% 32%, rgba(56,189,248,.10), transparent 70%);
+}
+#membershipView > * { position: relative; }
+
+/* Hero — gradient headline */
+.pricing-hero { padding: 34px 0 14px; }
+.pricing-hero-title {
+  font-size: 34px;
+  background: linear-gradient(115deg, var(--text-primary) 35%, var(--accent) 75%, var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Billing toggle — glassy pill */
+.billing-toggle {
+  backdrop-filter: blur(8px);
+  background: rgba(255,255,255,.65);
+  box-shadow: var(--shadow-sm);
+}
+[data-theme="dark"] .billing-toggle {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(255,255,255,.10);
+}
+.billing-opt.active {
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+}
+
+/* Pricing cards — soft gradient surface + tier tint */
+.pricing-grid { gap: 22px; margin-top: 18px; align-items: stretch; }
+.pricing-card {
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 28px 24px 24px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+  transition: transform .28s var(--ease), box-shadow .28s var(--ease), border-color .28s var(--ease);
+}
+.pricing-card::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, var(--tier-color, #5858f5), transparent 45%);
+  opacity: .07;
+  pointer-events: none;
+}
+[data-theme="dark"] .pricing-card {
+  border-color: rgba(255,255,255,.08);
+  background: linear-gradient(180deg, #262638 0%, #20202f 60%);
+}
+[data-theme="dark"] .pricing-card::before { opacity: .12; }
+.pricing-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 18px 44px rgba(88,88,245,.16);
+  border-color: rgba(88,88,245,.35);
+}
+[data-theme="dark"] .pricing-card:hover {
+  box-shadow: 0 18px 44px rgba(0,0,0,.5), 0 0 0 1px rgba(123,123,245,.35);
+}
+
+/* Popular card — gradient ring + lift (QClaw hero card) */
+.pricing-card.popular {
+  transform: translateY(-8px) scale(1.02);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--bg-card), var(--bg-card)) padding-box,
+    linear-gradient(135deg, var(--accent), var(--accent-2) 55%, #38bdf8) border-box;
+  box-shadow: 0 22px 54px rgba(88,88,245,.22);
+}
+[data-theme="dark"] .pricing-card.popular {
+  background:
+    linear-gradient(180deg, #2a2a40 0%, #22222f 65%) padding-box,
+    linear-gradient(135deg, var(--accent), var(--accent-2) 55%, #38bdf8) border-box;
+  box-shadow: 0 22px 54px rgba(123,123,245,.28);
+}
+.pricing-card.popular:hover { transform: translateY(-11px) scale(1.02); }
+
+/* Popular badge — pill instead of rotated ribbon */
+.pricing-badge {
+  top: 16px; right: 16px;
+  transform: none;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  box-shadow: 0 4px 14px rgba(88,88,245,.4);
+}
+
+/* Price emphasis */
+.pricing-price { margin: 14px 0 2px; }
+.pricing-card.popular .pricing-price .amount {
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Features — round check chips + divider */
+.pricing-features {
+  border-top: 1px dashed var(--border-color);
+  padding-top: 14px;
+  margin-top: 4px;
+}
+[data-theme="dark"] .pricing-features { border-top-color: rgba(255,255,255,.10); }
+.pricing-features li { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.pricing-features li i {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; flex: 0 0 18px;
+  border-radius: 50%; font-size: 10px; margin-right: 0;
+  background: rgba(88,88,245,.12);
+  color: var(--tier-color, #5858f5);
+}
+[data-theme="dark"] .pricing-features li { color: #c9cdd6; }
+
+/* CTA — gradient + tactile */
+.pricing-btn {
+  border-radius: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, var(--tier-color, #5858f5), var(--accent-2));
+  box-shadow: 0 6px 18px rgba(88,88,245,.22);
+  transition: transform .18s var(--ease), box-shadow .18s var(--ease), filter .18s;
+}
+.pricing-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow: 0 10px 26px rgba(88,88,245,.34);
+}
+.pricing-btn:active:not(:disabled) { transform: translateY(0) scale(.98); }
+.pricing-btn:disabled { background: var(--bg-light); box-shadow: none; }
+[data-theme="dark"] .pricing-btn:disabled { background: rgba(255,255,255,.06); color: var(--text-muted); }
+
+/* Current-plan banner — glass card */
+.member-card {
+  border-radius: 18px;
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-sm);
+}
+[data-theme="dark"] .member-card {
+  background: linear-gradient(180deg, #262638 0%, #20202f 100%);
+  border-color: rgba(255,255,255,.08);
+  border-left-width: 4px;
+}
+
+/* Trust row — subtle chips */
+.pricing-trust { margin-top: 34px; gap: 14px; }
+.trust-item {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+}
+[data-theme="dark"] .trust-item {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(255,255,255,.08);
+}
+
+/* ============================================================
+   Pricing cards — QClaw-faithful SPOTLIGHT redesign
+   Mouse-follow surface glow + glowing border ring that tracks
+   the cursor + subtle tilt/lift + compact "小巧精致" cards.
+   (#membershipView scope → higher specificity, overrides above)
+   ============================================================ */
+
+/* Grid: tighter & delicate cards */
+#membershipView .pricing-grid {
+  grid-template-columns: repeat(auto-fit, minmax(198px, 1fr));
+  gap: 16px;
+  margin-top: 22px;
+  perspective: 1200px;
+}
+
+/* Base card — compact, refined, holds the spotlight layers */
+#membershipView .pricing-card {
+  --mx: 50%;
+  --my: -20%;
+  --rx: 0deg;
+  --ry: 0deg;
+  --glow: var(--tier-color, #5858f5);
+  position: relative;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 22px 20px 20px;
+  background: var(--bg-card);
+  overflow: hidden;
+  transform: perspective(1200px) rotateX(var(--rx)) rotateY(var(--ry)) translateY(0) translateZ(0);
+  transform-style: preserve-3d;
+  transition: transform .3s cubic-bezier(.22,.61,.36,1),
+              box-shadow .35s ease, border-color .35s ease;
+  will-change: transform;
+}
+/* keep content above the glow layers */
+#membershipView .pricing-card > * { position: relative; z-index: 2; }
+
+/* Layer 1 — surface spotlight following the mouse (hover reveal) */
+#membershipView .pricing-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background: radial-gradient(
+    260px circle at var(--mx) var(--my),
+    color-mix(in srgb, var(--glow) 26%, transparent) 0%,
+    color-mix(in srgb, var(--glow) 8%, transparent) 36%,
+    transparent 62%
+  );
+  opacity: 0;
+  transition: opacity .35s ease;
+  pointer-events: none;
+}
+#membershipView .pricing-card:hover::before { opacity: 1; }
+
+/* Layer 2 — glowing BORDER ring that tracks the cursor (mask keeps edge only) */
+#membershipView .pricing-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: radial-gradient(
+    220px circle at var(--mx) var(--my),
+    color-mix(in srgb, var(--glow) 95%, #ffffff) 0%,
+    color-mix(in srgb, var(--glow) 45%, transparent) 32%,
+    transparent 60%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          mask-composite: exclude;
+  opacity: 0;
+  transition: opacity .35s ease;
+  pointer-events: none;
+}
+#membershipView .pricing-card:hover::after { opacity: 1; }
+
+/* Hover lift (composed with the JS-driven tilt vars) */
+#membershipView .pricing-card:hover {
+  transform: perspective(1200px) rotateX(var(--rx)) rotateY(var(--ry)) translateY(-8px);
+  box-shadow: 0 18px 42px color-mix(in srgb, var(--glow) 16%, transparent);
+  border-color: color-mix(in srgb, var(--glow) 30%, var(--border-color));
+}
+[data-theme="dark"] #membershipView .pricing-card {
+  border-color: rgba(255,255,255,.08);
+  background: linear-gradient(180deg, #23232f 0%, #1c1c27 100%);
+}
+[data-theme="dark"] #membershipView .pricing-card:hover {
+  box-shadow: 0 20px 48px rgba(0,0,0,.55),
+              0 0 30px color-mix(in srgb, var(--glow) 20%, transparent);
+}
+
+/* Compact typography inside cards */
+#membershipView .pricing-name { font-size: 16px; font-weight: 700; letter-spacing: -.2px; }
+#membershipView .pricing-price { margin: 12px 0 2px; }
+#membershipView .pricing-price .cur { font-size: 15px; }
+#membershipView .pricing-price .amount { font-size: 30px; font-weight: 800; letter-spacing: -1px; }
+#membershipView .pricing-price .per { font-size: 13px; }
+#membershipView .pricing-features { margin: 10px 0 16px; }
+#membershipView .pricing-features li { font-size: 12.5px; padding: 5px 0; gap: 9px; }
+#membershipView .pricing-features li i { width: 16px; height: 16px; flex-basis: 16px; font-size: 9px; }
+#membershipView .pricing-btn { padding: 11px; font-size: 13.5px; border-radius: 11px; }
+
+/* Popular card — persistent soft glow ring + gentle float, stands out at rest */
+#membershipView .pricing-card.popular {
+  border-color: color-mix(in srgb, var(--glow) 42%, transparent);
+  box-shadow: 0 10px 34px color-mix(in srgb, var(--glow) 16%, transparent);
+  transform: perspective(1200px) rotateX(var(--rx)) rotateY(var(--ry)) translateY(-6px);
+}
+#membershipView .pricing-card.popular::before {
+  opacity: .5;
+  background:
+    radial-gradient(260px circle at var(--mx) var(--my), color-mix(in srgb, var(--glow) 26%, transparent) 0%, transparent 62%),
+    radial-gradient(320px 160px at 50% -10%, color-mix(in srgb, var(--glow) 16%, transparent), transparent 70%);
+}
+#membershipView .pricing-card.popular:hover {
+  transform: perspective(1200px) rotateX(var(--rx)) rotateY(var(--ry)) translateY(-11px);
+}
+#membershipView .pricing-card.popular:hover::before { opacity: 1; }
+[data-theme="dark"] #membershipView .pricing-card.popular {
+  background: linear-gradient(180deg, #262636 0%, #1e1e2b 100%);
+  box-shadow: 0 12px 38px color-mix(in srgb, var(--glow) 24%, transparent);
+}
+
+/* current plan — dim but still interactive glow */
+#membershipView .pricing-card.current { opacity: .82; }
+
+/* Reduced-motion: disable tilt/lift, keep glow */
+@media (prefers-reduced-motion: reduce) {
+  #membershipView .pricing-card,
+  #membershipView .pricing-card:hover { transform: none !important; transition: box-shadow .3s ease, border-color .3s ease; }
+}
+
+/* ================================================================
+   Home Category Chips — colored to match 精选分类 page palette
+   Each chip carries its category's representative color (--cat).
+   Default: soft tinted fill + colored text/icon/border.
+   Active: solid fill with white text. Dark mode adjusts tint level.
+   ================================================================ */
+.category-chip[data-cat="all"]           { --cat: #5858f5; }
+.category-chip[data-cat="news"]          { --cat: #e74c3c; }
+.category-chip[data-cat="tech"]          { --cat: #3498db; }
+.category-chip[data-cat="business"]      { --cat: #f39c12; }
+.category-chip[data-cat="education"]     { --cat: #2ecc71; }
+.category-chip[data-cat="health"]        { --cat: #e91e63; }
+.category-chip[data-cat="society"]       { --cat: #9b59b6; }
+.category-chip[data-cat="culture"]       { --cat: #1abc9c; }
+.category-chip[data-cat="science"]       { --cat: #34495e; }
+.category-chip[data-cat="sports"]        { --cat: #e67e22; }
+.category-chip[data-cat="entertainment"] { --cat: #e74c3c; }
+.category-chip[data-cat="story"]         { --cat: #8e44ad; }
+
+.category-chip {
+  background: color-mix(in srgb, var(--cat, var(--main-blue)) 10%, var(--bg-white));
+  border-color: color-mix(in srgb, var(--cat, var(--main-blue)) 35%, transparent);
+  color: var(--cat, var(--text-secondary));
+  font-weight: 600;
+}
+.category-chip i { color: var(--cat, inherit); }
+
+.category-chip:hover {
+  background: color-mix(in srgb, var(--cat, var(--main-blue)) 18%, var(--bg-white));
+  border-color: var(--cat, var(--main-blue));
+  color: var(--cat, var(--main-blue));
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--cat, var(--main-blue)) 30%, transparent);
+  transform: translateY(-1px);
+}
+
+.category-chip.active {
+  background: var(--cat, var(--main-blue));
+  border-color: var(--cat, var(--main-blue));
+  color: #fff;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--cat, var(--main-blue)) 45%, transparent);
+}
+.category-chip.active i { color: #fff; }
+
+/* Dark theme: deeper tint so chips sit well on dark surface */
+[data-theme="dark"] .category-chip {
+  background: color-mix(in srgb, var(--cat, var(--main-blue)) 16%, var(--bg-white));
+  border-color: color-mix(in srgb, var(--cat, var(--main-blue)) 45%, transparent);
+  color: color-mix(in srgb, var(--cat, var(--main-blue)) 78%, #ffffff);
+}
+[data-theme="dark"] .category-chip i {
+  color: color-mix(in srgb, var(--cat, var(--main-blue)) 78%, #ffffff);
+}
+[data-theme="dark"] .category-chip:hover {
+  background: color-mix(in srgb, var(--cat, var(--main-blue)) 26%, var(--bg-white));
+  border-color: var(--cat, var(--main-blue));
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--cat, var(--main-blue)) 35%, transparent);
+}
+[data-theme="dark"] .category-chip.active {
+  background: var(--cat, var(--main-blue));
+  border-color: var(--cat, var(--main-blue));
+  color: #fff;
+}
+[data-theme="dark"] .category-chip.active i { color: #fff; }
+
+/* 科学 #34495e is too dark for dark theme text — lighten its accent there */
+[data-theme="dark"] .category-chip[data-cat="science"] { --cat: #5d7fa3; }
+
+/* ============================================================
+   Sticky Category Bar + hover clip fix (v20260726l)
+   1) 分类条吸顶：滚动时固定在顶栏正下方，不随页面滚走
+   2) 修复 chip 悬停上浮时顶部被滚动容器裁剪的问题
+   ============================================================ */
+.categories-section {
+  position: sticky;
+  top: var(--header-height);
+  z-index: 900; /* 低于顶栏(1000)/侧边栏(1001)，高于内容卡片 */
+  background: var(--bg-white);
+  padding-top: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* 滚动容器留出上下余量：上浮 1px + 投影不再被 overflow 裁掉 */
+.categories-scroll {
+  padding-top: 6px;
+  padding-bottom: 10px;
+}
+
+/* 深色模式下吸顶条底色跟随主题变量，分隔线更柔和 */
+[data-theme="dark"] .categories-section {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ============================================================
+   Language Settings Page (v20260726s)
+   ============================================================ */
+#languageView {
+  padding: 32px 36px 48px;
+  max-width: 720px;
+}
+
+.language-settings-card {
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+  padding: 36px 40px 40px;
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
+}
+
+.language-settings-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 36px;
+  letter-spacing: -0.5px;
+}
+
+.language-setting-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 26px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.language-setting-row:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.language-setting-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.language-setting-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.language-setting-hint {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.language-select-wrap {
+  position: relative;
+  width: 220px;
+  flex: 0 0 auto;
+}
+
+.language-select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  padding: 11px 38px 11px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  color-scheme: light;
+}
+
+.language-select:hover {
+  border-color: var(--main-blue);
+  background: var(--bg-hover);
+}
+
+.language-select:focus {
+  border-color: var(--main-blue);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.language-select-arrow {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+  transition: color 0.2s ease;
+}
+
+.language-select:hover + .language-select-arrow,
+.language-select:focus + .language-select-arrow {
+  color: var(--main-blue);
+}
+
+[data-theme="dark"] .language-settings-card {
+  background: var(--bg-card);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+[data-theme="dark"] .language-setting-row {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .language-select {
+  background: var(--bg-card);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  /* 让浏览器用深色原生弹层，避免点开后白底刺眼 */
+  color-scheme: dark;
+}
+
+/* popup 内选项兜底配色（支持的浏览器生效） */
+[data-theme="dark"] .language-select option {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .language-select:hover,
+[data-theme="dark"] .language-select:focus {
+  border-color: var(--main-blue);
+  background: var(--bg-hover);
+}
+
+@media (max-width: 768px) {
+  #languageView {
+    padding: 22px 18px 32px;
+  }
+  .language-settings-card {
+    padding: 24px 22px 28px;
+  }
+  .language-settings-title {
+    font-size: 24px;
+    margin-bottom: 26px;
+  }
+  .language-setting-row {
+    flex-direction: column;
+    gap: 14px;
+    padding: 20px 0;
+  }
+  .language-select-wrap {
+    width: 100%;
+  }
+}
+
+/* ==========================================================================
+   Reader -- 播客播放详情页（左：播客卡片 + 剧集；右：播放器 + 实时字幕）
+   ========================================================================== */
+.reader-container {
+  display: grid;
+  grid-template-columns: 296px minmax(0, 1fr);
+  gap: 26px;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 22px 32px 130px;
+  align-items: start;
+}
+
+/* ---------- 左栏 ---------- */
+.reader-side {
+  position: sticky;
+  top: calc(var(--header-height) + 14px);
+  max-height: calc(100vh - var(--header-height) - 150px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+.reader-side::-webkit-scrollbar { width: 6px; }
+.reader-side::-webkit-scrollbar-thumb { background: var(--border-color-dark); border-radius: 3px; }
+
+.reader-card {
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 18px;
+}
+.reader-card .detail-cover {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  border-radius: 12px;
+  margin-bottom: 14px;
+}
+.reader-card .detail-title {
+  font-size: 19px;
+  margin-bottom: 10px;
+  line-height: 1.35;
+}
+.reader-card .detail-meta {
+  gap: 14px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+}
+.reader-card .detail-desc {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.reader-card .favorite-btn { width: 100%; justify-content: center; }
+.reader-card .back-btn { margin-bottom: 14px; }
+
+.reader-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  padding: 0 4px 10px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 6px;
+}
+.reader-side-count { font-weight: 500; font-size: 12px; color: var(--text-light); }
+.reader-side .episodes-list { gap: 2px; }
+.reader-side .episode-item { padding: 9px 10px; gap: 10px; border-radius: 8px; }
+.reader-side .episode-cover { width: 42px; height: 42px; }
+.reader-side .episode-title { font-size: 13px; margin-bottom: 2px; }
+.reader-side .episode-meta { font-size: 11.5px; }
+
+/* ---------- 右栏 ---------- */
+.reader-main { min-width: 0; display: flex; flex-direction: column; }
+
+.reader-bar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  margin-bottom: 12px;
+}
+/* overflow:hidden is load-bearing, not cosmetic: `.reader-bar-title` is nowrap, so
+   without it this item's automatic minimum size is the full ~390px title, which
+   becomes the whole reader's min-content width and pushes a 237px horizontal
+   scrollbar onto phones. Hiding the overflow makes the automatic minimum 0 and
+   lets the title ellipsis inside its track instead. */
+.reader-bar-now { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 200px; overflow: hidden; }
+.reader-bar-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--main-blue);
+}
+.reader-bar-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reader-bar-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.reader-tool { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); }
+.reader-tool select {
+  appearance: none;
+  padding: 7px 30px 7px 12px;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 9px;
+  background: var(--bg-white) url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0h10L5 6z' fill='%236b7486'/%3E%3C/svg%3E") no-repeat right 11px center;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.reader-tool select:focus { outline: 2px solid rgba(88,88,245,.35); outline-offset: 1px; }
+
+.reader-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: 1px solid var(--border-color-dark);
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-white);
+  transition: all .16s;
+}
+.reader-toggle.active { background: var(--main-blue); border-color: var(--main-blue); color: #fff; }
+
+.reader-modes { display: inline-flex; background: var(--bg-light); border-radius: 9px; padding: 3px; gap: 2px; }
+.reader-mode {
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: all .16s;
+}
+.reader-mode.active { background: var(--bg-white); color: var(--main-blue); box-shadow: 0 1px 4px rgba(0,0,0,.10); }
+
+.reader-legend {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 0 6px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.reader-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.reader-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.reader-dot.syll { background: rgba(88,88,245,.55); }
+.reader-dot.beyond { background: rgba(240,138,32,.75); }
+.reader-legend-hint { margin-left: auto; color: var(--text-light); }
+
+.reader-scroll {
+  height: calc(100vh - var(--header-height) - 260px);
+  min-height: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  background: var(--bg-white);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+}
+.reader-scroll::-webkit-scrollbar { width: 8px; }
+.reader-scroll::-webkit-scrollbar-thumb { background: var(--border-color-dark); border-radius: 4px; }
+
+.reader-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 10px;
+  color: var(--text-light);
+  text-align: center;
+  padding: 40px 24px;
+}
+.reader-placeholder i { font-size: 40px; opacity: .45; }
+.reader-placeholder p { font-size: 15px; font-weight: 600; color: var(--text-muted); }
+.reader-placeholder span { font-size: 12.5px; max-width: 340px; line-height: 1.7; }
+
+.reader-body { margin-top: 0; padding: 12px 14px; }
+
+/* ---------- 字幕正文 ---------- */
+.reader-body .transcript-line {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border-left: 3px solid transparent;
+  gap: 10px;
+}
+.reader-body .transcript-line.active {
+  background: rgba(88,88,245,.09);
+  border-left-color: var(--main-blue);
+}
+.reader-body .transcript-line.active .transcript-en { color: var(--text-primary); font-weight: 500; }
+.reader-body .transcript-en { font-size: 16px; line-height: 1.85; }
+.reader-body .transcript-zh { font-size: 13.5px; line-height: 1.7; color: var(--text-muted); margin-top: 5px; }
+.reader-body .transcript-time { min-width: 46px; padding-top: 3px; }
+
+/* ---------- 单词标注 ---------- */
+.tw {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0 1px;
+  transition: background .14s;
+}
+.tw-syll {
+  color: var(--main-blue);
+  background: rgba(88,88,245,.07);
+}
+.tw-syll:hover { background: rgba(88,88,245,.20); }
+.tw-beyond {
+  color: #c2650e;
+  background: rgba(240,138,32,.10);
+  border-bottom: 1px dashed rgba(240,138,32,.55);
+}
+.tw-beyond:hover { background: rgba(240,138,32,.22); }
+
+/* 词后紧跟的小字中文 */
+.tw-zh {
+  display: inline;
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 400;
+  margin: 0 1px 0 2px;
+  padding: 0 3px;
+  border-radius: 4px;
+  white-space: nowrap;
+  letter-spacing: 0;
+  vertical-align: 1px;
+}
+.tw-syll .tw-zh { color: rgba(88,88,245,.85); background: rgba(88,88,245,.08); }
+.tw-beyond .tw-zh { color: #a8560c; background: rgba(240,138,32,.13); }
+body.hide-gloss .tw-zh { display: none; }
+body.hide-gloss .tw-syll { background: transparent; color: inherit; }
+body.hide-gloss .tw-beyond { background: transparent; color: inherit; border-bottom-color: transparent; }
+body.hide-gloss .tw-syll:hover { background: rgba(88,88,245,.20); }
+body.hide-gloss .tw-beyond:hover { background: rgba(240,138,32,.22); }
+
+/* ---------- 暗色 ---------- */
+[data-theme="dark"] .reader-card,
+[data-theme="dark"] .reader-bar,
+[data-theme="dark"] .reader-scroll { background: var(--bg-card); border-color: var(--border-color); }
+[data-theme="dark"] .reader-toggle { background: var(--bg-light); }
+[data-theme="dark"] .reader-toggle.active { background: var(--main-blue); color: #fff; }
+[data-theme="dark"] .reader-modes { background: var(--bg-light); }
+[data-theme="dark"] .reader-mode.active { background: var(--bg-page); color: var(--main-blue); }
+[data-theme="dark"] .reader-tool select { background-color: var(--bg-light); color: var(--text-primary); }
+[data-theme="dark"] .tw-syll { color: #a5a5fb; }
+[data-theme="dark"] .tw-syll .tw-zh { color: #b9b9fc; }
+[data-theme="dark"] .tw-beyond { color: #f0a95c; }
+[data-theme="dark"] .tw-beyond .tw-zh { color: #f5bd7f; }
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 1100px) {
+  /* minmax(0,1fr), NOT 1fr: a bare `1fr` is `minmax(auto,1fr)`, whose auto floor is
+     the item's min-content width. `.episode-title` uses `white-space:nowrap`, so
+     that floor is ~615px and the single column refuses to shrink -> 237px of
+     horizontal overflow on a phone. Forcing the floor to 0 lets the flex rows
+     shrink and the titles ellipsis as intended. */
+  .reader-container { grid-template-columns: minmax(0, 1fr); padding: 18px 20px 130px; }
+  .reader-side {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    /* Required together with minmax(0,1fr): once overflow is `visible` the grid
+       item's `min-width:auto` resolves to its ~615px min-content, so the item
+       itself would still blow past its track. Pin it to 0 and let the episode
+       rows ellipsis instead. */
+    min-width: 0;
+  }
+  .reader-card { display: flex; gap: 16px; align-items: flex-start; }
+  .reader-card .detail-cover { width: 132px; flex: 0 0 132px; margin-bottom: 0; }
+  .reader-card .back-btn { position: absolute; }
+  .reader-scroll { height: auto; max-height: 62vh; }
+  .reader-legend-hint { display: none; }
+}
+@media (max-width: 700px) {
+  .reader-container { padding: 14px 12px 130px; gap: 16px; }
+  .reader-card { flex-direction: column; }
+  .reader-card .detail-cover { width: 108px; flex-basis: 108px; }
+  .reader-bar { flex-direction: column; align-items: stretch; }
+  /* In a column flex container the line's cross size is the MAX of the items'
+     hypothetical cross sizes, so a nowrap title with a 393px max-content still
+     widens the whole row even though the bar itself is only 366px. A definite
+     width resolves against the bar's content box and pins the row down. */
+  .reader-bar-now,
+  .reader-bar-tools { width: 100%; min-width: 0; }
+  .reader-bar-tools { justify-content: space-between; }
+  .reader-body .transcript-en { font-size: 15.5px; }
+
+  /* The shared player bar crams 5 transport buttons + a two-line blurb into
+     390px; that squeezes .player-info to ~0 width and wraps the podcast name
+     one word per line. Drop the secondary bits so the title still reads. */
+  .player-btn-nav,
+  .player-podcast { display: none; }
+  .player-cover { width: 38px; height: 38px; }
+  .player-controls { gap: 4px; }
+  .player-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+  }
+  .player-content { gap: 8px; padding: 8px 10px; }
+}
+
+/* ==========================================================================
+   单词卡片（点击字幕里的标注词弹出）
+   ========================================================================== */
+/* NOTE: do NOT redeclare --bg-card / --shadow-* here. They are already defined by
+   the polish layer's `:root` (light) and overridden by `[data-theme="dark"]`.
+   A later `:root` block has the SAME specificity as `[data-theme="dark"]`, so
+   putting one here silently wins in dark mode and repaints every --bg-card
+   surface (reader, modals, pay cards) white. */
+
+.word-popover { position: fixed; width: 300px; }
+
+.word-popover-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.word-popover-word { margin-bottom: 0; }
+.word-popover-tags { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.word-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(88,88,245,.12);
+  color: var(--main-blue);
+  white-space: nowrap;
+}
+.word-tag.muted { background: var(--bg-light); color: var(--text-light); font-weight: 600; }
+
+.word-popover-gloss {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  background: var(--bg-light);
+  border-radius: 9px;
+  padding: 9px 11px;
+  margin-bottom: 10px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+.word-popover-gloss:empty { display: none; }

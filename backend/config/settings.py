@@ -98,11 +98,15 @@ USE_TZ = True
 # Static files
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+# Only include directories that actually exist — an absent entry in
+# STATICFILES_DIRS makes `collectstatic` warn/fail on a fresh deployment.
 STATICFILES_DIRS = [
-    BASE_DIR / 'static',
-    PROJECT_ROOT / 'css',
-    PROJECT_ROOT / 'js',
-    PROJECT_ROOT / 'images',
+    d for d in (
+        BASE_DIR / 'static',
+        PROJECT_ROOT / 'css',
+        PROJECT_ROOT / 'js',
+        PROJECT_ROOT / 'images',
+    ) if d.exists()
 ]
 
 MEDIA_URL = '/media/'
@@ -112,7 +116,19 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS
 CORS_ALLOW_ALL_ORIGINS = DEBUG
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if not DEBUG else []
+# Drop empty entries — an empty string is not a valid origin and
+# django-cors-headers raises corsheaders.E013 on it.
+CORS_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if o.strip()
+] if not DEBUG else []
+
+# Behind a TLS-terminating reverse proxy (PythonAnywhere / Nginx / Cloudflare)
+# Django needs to be told the original request was HTTPS, otherwise
+# `request.is_secure()` is False and CSRF checks on the admin reject us.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+CSRF_TRUSTED_ORIGINS = [
+    o for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o
+]
 
 # REST Framework
 REST_FRAMEWORK = {

@@ -1,0 +1,61 @@
+{
+  "_comment": "要抓取的播客源。只收录在本机网络下实测可达（feed 200 + 音频 206）的源。",
+  "podcasts": [
+    {
+      "slug": "easy-english-everyday-conversations",
+      "name": "Easy English: Learn English with everyday conversations",
+      "feed": "https://feeds.fireside.fm/easyenglish/rss",
+      "category": "education",
+      "difficulty": "beginner"
+    },
+    {
+      "slug": "daily-easy-english-expression",
+      "name": "Daily Easy English Expression Podcast",
+      "feed": "https://rss.libsyn.com/shows/54133/destinations/197908.xml",
+      "category": "education",
+      "difficulty": "beginner"
+    },
+    {
+      "slug": "all-ears-english",
+      "name": "All Ears English Podcast",
+      "feed": "https://feeds.megaphone.fm/allearsenglish",
+      "category": "education",
+      "difficulty": "intermediate"
+    },
+    {
+      "slug": "espresso-english",
+      "name": "Espresso English Podcast",
+      "feed": "https://rss.libsyn.com/shows/56803/destinations/212704.xml",
+      "category": "education",
+      "difficulty": "intermediate"
+    },
+    {
+      "slug": "reallife-english",
+      "name": "RealLife English: Learn and Speak Confident, Natural English",
+      "feed": "https://rss.libsyn.com/shows/41632/destinations/126390.xml",
+      "category": "education",
+      "difficulty": "intermediate"
+    },
+    {
+      "slug": "real-english-conversations",
+      "name": "Real English Conversations Podcast",
+      "feed": "https://rss.libsyn.com/shows/441930/destinations/3695967.xml",
+      "category": "education",
+      "difficulty": "intermediate"
+    },
+    {
+      "slug": "english-learning-for-curious-minds",
+      "name": "English Learning for Curious Minds",
+      "feed": "https://feeds.transistor.fm/leonardo-english-english-language-learning-for-curious-minds",
+      "category": "culture",
+      "difficulty": "advanced"
+    },
+    {
+      "slug": "think-fast-talk-smart",
+      "name": "Think Fast Talk Smart: Communication Techniques",
+      "feed": "https://feeds.transistor.fm/think-fast-talk-smart-communication-techniques",
+      "category": "business",
+      "difficulty": "advanced"
+    }
+  ]
+}

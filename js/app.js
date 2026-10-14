@@ -36,6 +36,13 @@ let transcriptLines = [];
 let transcriptMode = 'bilingual';
 let lastActiveLineIdx = -1;
 
+// ===== 播放详情页 Reader（按英语水平标注生词）=====
+let readerLevel = 'cet4';
+try { readerLevel = localStorage.getItem('lbReaderLevel') || 'cet4'; } catch (e) {}
+let readerGlossOn = true;
+try { readerGlossOn = localStorage.getItem('lbReaderGloss') !== '0'; } catch (e) {}
+let readerDictOk = false;
+
 // ===== Membership / Vocabulary / AI / Shadowing state =====
 let currentTiers = [];
 let currentMembership = null;
@@ -52,6 +59,17 @@ let shadowTimerId = null;
 let shadowStartTs = 0;
 let shadowTargetDuration = 0;
 
+// ===== Language Settings =====
+let appLanguage = 'zh-CN';       // display language
+let translationLanguage = 'zh-CN'; // translation/explanation language
+const SUPPORTED_LANGUAGES = [
+  { code: 'zh-CN', name: '简体中文', native: '简体中文' },
+  { code: 'zh-TW', name: '繁體中文', native: '繁體中文' },
+  { code: 'en',    name: 'English', native: 'English' },
+  { code: 'ja',    name: '日本語',  native: '日本語' },
+  { code: 'ko',    name: '한국어',  native: '한국어' },
+];
+
 // ===== DOM Elements =====
 const searchInput = document.getElementById('searchInput');
 let backendPodcasts = [];
@@ -65,6 +83,7 @@ const detailView = document.getElementById('detailView');
 const searchView = document.getElementById('searchView');
 const membershipView = document.getElementById('membershipView');
 const vocabView = document.getElementById('vocabView');
+const languageView = document.getElementById('languageView');
 const backBtn = document.getElementById('backBtn');
 const audioPlayer = document.getElementById('audioPlayer');
 
@@ -80,6 +99,7 @@ const views = {
   search: searchView,
   membership: membershipView,
   vocab: vocabView,
+  language: languageView,
 };
 
 // ===== Downlisted podcast tracking =====
@@ -125,10 +145,40 @@ async function syncDownlistedPodcasts() {
 }
 
 // ===== Initialize =====
+// Disable the browser's own scroll restoration: on refresh/direct-open of a hash
+// page (e.g. #detail/backend-6) the browser remembers the previous scroll offset
+// and re-applies it AFTER our async renders grow the page — overriding our
+// scroll-to-top and leaving the user mid-page. We manage scrolling ourselves.
+try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (e) {}
+
+// Instant scroll-to-top helper (bypasses CSS `scroll-behavior: smooth`)
+function scrollToTopInstant() {
+  try {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  } catch (e) {}
+  // Belt & braces: historically <body> was an independent scroller (html/body
+  // height:100% + overflow-x:hidden), so window.scrollTo() alone did nothing.
+  // Reset every plausible scroller directly.
+  [document.scrollingElement, document.documentElement, document.body].forEach(el => {
+    if (el && el.scrollTop) el.scrollTop = 0;
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // Background loads — NON-blocking so nav always wires up even if the backend is slow/unreachable
   syncDownlistedPodcasts().catch(e => showFatalError('syncDownlistedPodcasts: ' + (e && e.message)));
-  loadBackendPodcasts().then(() => { try { renderHome(); } catch (e) {} }).catch(e => showFatalError('loadBackendPodcasts: ' + (e && e.message)));
+  loadBackendPodcasts().then(async () => {
+    try { renderHome(); } catch (e) {}
+    // Pull server-side favorites so a refresh restores the authoritative set
+    if (isLoggedIn()) { try { await loadFavoritesFromBackend(); } catch (e) {} }
+    // Re-render any view that depends on the backend podcast list — notably the
+    // "我的关注" page, which may have been drawn before podcasts finished loading
+    // (e.g. on a refresh that restored the #follow hash). Without this, the grid
+    // stays empty even though favorites were persisted in localStorage.
+    if (currentPage === 'follow') { try { renderFollowPage(); } catch (e) {} }
+    // Retry hash restore for detail pages (they need the backend podcast list)
+    try { if (window.__pendingHashRestore) { window.__pendingHashRestore = !restorePageFromHash(); } } catch (e) {}
+  }).catch(e => showFatalError('loadBackendPodcasts: ' + (e && e.message)));
 
   // Clear any autofilled values from the search input
   // (Chrome hard-refresh ignores autocomplete="off" and fills saved emails)
@@ -154,12 +204,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   initPlayer();
   initShadow();
   initWordPopover();
+  initReader();
   initCategoriesPage();
   setupBillingToggle();
   setupPaymentModal();
   updateUserUI();
   if (isLoggedIn()) { fetchMembership(); loadWords(); }
   loadFavoritesFromStorage();
+  loadLanguageSettings();
+
+  // Restore the page the user was on before refresh (from URL hash).
+  // If it's a detail page whose podcast isn't loaded yet, mark pending — retried after loadBackendPodcasts.
+  try {
+    const restored = restorePageFromHash();
+    if (!restored && (location.hash || '').startsWith('#detail/')) {
+      window.__pendingHashRestore = true;
+    }
+  } catch (e) {}
 });
 
 async function loadBackendPodcasts() {
@@ -192,7 +253,7 @@ function getVisiblePodcasts() {
     category: (window._categoryMap && window._categoryMap[p.category]) ? window._categoryMap[p.category].slug : (p.category_name ? String(p.category) : 'news'),
     categoryLabel: (window._categoryMap && window._categoryMap[p.category]) ? window._categoryMap[p.category].name : (p.category_name || '未分类'),
     difficulty: p.difficulty || 'intermediate',
-    cover: resolveMediaUrl(p.cover_image),
+    cover: (p.cover_url || p.cover_image) ? resolveMediaUrl(p.cover_url || p.cover_image) : `https://picsum.photos/seed/${p.slug || p.id}/300/300`,
     description: p.description || '',
     episodes: [],
     isFeatured: !!p.is_featured,
@@ -200,17 +261,19 @@ function getVisiblePodcasts() {
     backendId: p.id,
   }));
 
-  const merged = [...localPodcasts, ...backendMapped];
-  const unique = [];
-  const seen = new Set();
-  merged.forEach(item => {
-    const key = item.backendId ? `backend:${item.backendId}` : `local:${item.id}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      unique.push(item);
-    }
-  });
-  return unique;
+  // Prefer backend (real) data. Only keep local mock entries that have no
+  // backend counterpart, so the home page never shows duplicate podcasts
+  // (one real + one fake) and every card plays genuine audio.
+  if (backendMapped.length > 0) {
+    const backendTitles = new Set(
+      backendMapped.map(p => (p.title || '').trim().toLowerCase())
+    );
+    const localFallback = localPodcasts.filter(
+      lp => !backendTitles.has((lp.title || '').trim().toLowerCase())
+    );
+    return [...backendMapped, ...localFallback];
+  }
+  return localPodcasts;
 }
 
 // ===== Navigation =====
@@ -242,9 +305,58 @@ function navigateTo(page) {
   } else if (page === 'vocab') {
     if (!isLoggedIn()) { showAuthModal('login'); return; }
     renderVocabPage();
+  } else if (page === 'language') {
+    renderLanguagePage();
   }
 
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Persist current page in URL hash so refresh (F5/Ctrl+F5) stays on this page
+  try {
+    let h = page;
+    if (page === 'detail' && currentPodcastId != null) {
+      h = 'detail/' + encodeURIComponent(currentPodcastId);
+    }
+    history.replaceState(null, '', '#' + h);
+  } catch (e) {}
+
+  // Instant (non-smooth) scroll to top on view switch.
+  // Why: CSS has `html { scroll-behavior: smooth }`, and smooth scrolling gets
+  // aborted mid-way by the async re-renders that follow a view switch
+  // (episode list fetch, innerHTML swaps, image loads), leaving the page
+  // stuck partway down. `behavior: 'instant'` bypasses the CSS smoothness.
+  scrollToTopInstant();
+
+  // Keep the freshly-rendered page's static chrome in sync with the chosen display language.
+  applyI18n();
+}
+
+// ===== Restore page from URL hash on load (refresh keeps current page) =====
+function restorePageFromHash() {
+  const raw = (location.hash || '').replace(/^#\/?/, '');
+  if (!raw) return false;
+  // A cache-busting query (e.g. `#language?v=...`) or trailing params must not
+  // corrupt the page token, so split off `?` and `/` before matching.
+  const page = raw.split(/[?#/]/)[0];
+  const paramRaw = raw.split('/')[1] || '';
+  const param = paramRaw.split(/[?#]/)[0];
+  const restorable = ['categories', 'follow', 'notes', 'history', 'blog', 'membership', 'vocab', 'detail', 'language'];
+  if (!restorable.includes(page)) return false;
+  // Login-gated pages: silently stay on home if not logged in (avoid modal on refresh)
+  if (['follow', 'notes', 'vocab'].includes(page) && !isLoggedIn()) return false;
+
+  if (page === 'detail') {
+    if (!param) return false;
+    const pid = decodeURIComponent(param);
+    const podcast = getVisiblePodcasts().find(p => String(p.id) === String(pid));
+    if (!podcast) return false; // backend list may not be loaded yet; caller can retry
+    openDetail(pid);
+    return true;
+  }
+
+  // Sync sidebar highlight with the restored page
+  const sidebarItems = document.querySelectorAll('.sidebar-nav .sidebar-item');
+  sidebarItems.forEach(i => i.classList.toggle('active', i.dataset.page === page));
+  navigateTo(page);
+  return true;
 }
 
 // ===== Category Filters =====
@@ -316,6 +428,7 @@ function renderHome() {
 
   const advanced = filtered.filter(p => p.difficulty === 'advanced').slice(0, 5);
   renderPodcastGrid('advancedGrid', advanced);
+  applyI18n();
 }
 
 // ===== Render Popular Programs =====
@@ -331,7 +444,7 @@ function renderPopularPrograms(programs) {
       <div class="program-bottom">
         <div class="program-play-btn" onclick="event.stopPropagation(); playPodcast('${p.id}')">
           <i class="fas fa-play"></i>
-          <span>${p.episodes.length}集</span>
+          <span>${p.episodes.length}<span data-i18n="集">集</span></span>
         </div>
       </div>
     </div>
@@ -378,8 +491,8 @@ async function openDetail(podcastId) {
   document.getElementById('detailCover').src = podcast.cover;
   document.getElementById('detailTitle').textContent = podcast.title;
   document.getElementById('detailAuthor').innerHTML = `<i class="fas fa-user"></i> ${podcast.author}`;
-  document.getElementById('detailEpisodes').innerHTML = `<i class="fas fa-list"></i> <span id="detailEpisodeCount">…</span> 集`;
-  document.getElementById('detailCategories').innerHTML = `<i class="fas fa-tag"></i> ${podcast.categoryLabel}`;
+  document.getElementById('detailEpisodes').innerHTML = `<i class="fas fa-list"></i> <span id="detailEpisodeCount">…</span> <span data-i18n="集">集</span>`;
+  document.getElementById('detailCategories').textContent = podcast.categoryLabel || '';
 
   const levelEl = document.getElementById('detailLevel');
   levelEl.textContent = DIFFICULTY_MAP[podcast.difficulty];
@@ -390,8 +503,19 @@ async function openDetail(podcastId) {
   updateFavoriteBtn();
   navigateTo('detail');
 
+  // 阅读器：正播的就是这个播客的节目 -> 直接接上字幕；否则回到占位态
+  if (currentEpisodeData && currentPodcast && String(currentPodcast.id) === String(podcastId)) {
+    loadReaderTranscript();
+  } else {
+    transcriptLines = [];
+    lastActiveLineIdx = -1;
+    setReaderNow('');
+    renderReaderTranscript();
+  }
+
   const episodesContainer = document.getElementById('episodesList');
   episodesContainer.innerHTML = '<div class="episode-loading"><i class="fas fa-spinner fa-spin"></i> 加载节目中…</div>';
+  applyI18n();
 
   let episodes = [];
   if (podcast.backendId) {
@@ -410,6 +534,9 @@ async function openDetail(podcastId) {
 
   if (!episodes.length) {
     episodesContainer.innerHTML = '<div class="episode-empty"><i class="fas fa-inbox"></i><p>该播客暂无节目</p></div>';
+    // Re-assert top position after async render (layout shifts can drag scroll down)
+    if (currentPage === 'detail' && currentPodcastId === podcastId) scrollToTopInstant();
+    applyI18n();
     return;
   }
 
@@ -437,6 +564,16 @@ async function openDetail(podcastId) {
       </div>
     </div>`;
   }).join('');
+  applyI18n();
+
+  // Re-assert top position AFTER the async episode-list render. On direct
+  // open / refresh of #detail/xxx the content growth above can leave the
+  // viewport mid-page; only do this if the user is still on this detail view.
+  if (currentPage === 'detail' && currentPodcastId === podcastId) {
+    requestAnimationFrame(() => {
+      if (currentPage === 'detail' && currentPodcastId === podcastId) scrollToTopInstant();
+    });
+  }
 }
 
 // ===== Back Button =====
@@ -483,11 +620,11 @@ function initSearch() {
 
 function performSearch(keyword) {
   const lowerKeyword = keyword.toLowerCase();
-  const results = PODCAST_DATA.filter(p =>
-    p.title.toLowerCase().includes(lowerKeyword) ||
-    p.author.toLowerCase().includes(lowerKeyword) ||
-    p.categoryLabel.includes(keyword) ||
-    p.description.includes(keyword)
+  const results = getVisiblePodcasts().filter(p =>
+    (p.title || '').toLowerCase().includes(lowerKeyword) ||
+    (p.author || '').toLowerCase().includes(lowerKeyword) ||
+    (p.categoryLabel || '').includes(keyword) ||
+    (p.description || '').includes(keyword)
   );
 
   document.getElementById('searchKeyword').textContent = keyword;
@@ -527,10 +664,10 @@ function initPlayer() {
   prevBtn.addEventListener('click', playPreviousEpisode);
   nextBtn.addEventListener('click', playNextEpisode);
   rewindBtn.addEventListener('click', () => {
-    audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - 10);
+    seekToTime(audioPlayer.currentTime - 10);
   });
   forwardBtn.addEventListener('click', () => {
-    audioPlayer.currentTime = Math.min(audioPlayer.duration || 0, audioPlayer.currentTime + 10);
+    seekToTime(audioPlayer.currentTime + 10);
   });
 
   closeBtn.addEventListener('click', () => {
@@ -654,10 +791,11 @@ function initPlayer() {
   audioPlayer.addEventListener('play', syncPlayButtonState);
   audioPlayer.addEventListener('pause', syncPlayButtonState);
   audioPlayer.addEventListener('loadedmetadata', () => {
-    if (Number.isFinite(audioPlayer.duration) && audioPlayer.duration > 0) {
-      document.getElementById('playerDuration').textContent = formatTime(audioPlayer.duration);
-      document.getElementById('playerProgress').style.width = '0%';
+    const d = getEffectiveDuration();
+    if (d > 0) {
+      document.getElementById('playerDuration').textContent = formatTime(d);
     }
+    document.getElementById('playerProgress').style.width = '0%';
   });
 }
 
@@ -668,12 +806,51 @@ function syncPlayButtonState() {
   playPauseBtn.innerHTML = shouldPause ? '<i class="fas fa-pause"></i>' : '<i class="fas fa-play"></i>';
 }
 
+// Effective duration for the progress bar / seeking.
+// Django's DEBUG media server returns `200` (not `206`) to the <audio>
+// element's Range request and sends no `Accept-Ranges`, so the browser
+// reports audioPlayer.duration as Infinity until the whole file buffers.
+// Fall back to the episode's known audio_duration (from the API) so the bar
+// moves immediately and seeking works even before the media resolves.
+function getEffectiveDuration() {
+  const d = Number.isFinite(audioPlayer.duration) && audioPlayer.duration > 0 ? audioPlayer.duration : 0;
+  if (d) return d;
+  if (currentEpisodeData && Number.isFinite(currentEpisodeData.audio_duration) && currentEpisodeData.audio_duration > 0) {
+    return currentEpisodeData.audio_duration;
+  }
+  return 0;
+}
+
+// Unified seek — works for both real <audio> and the simulated-playback
+// fallback (which drives its own clock via `simulatedTime`).
+function seekToTime(seconds) {
+  seconds = Number(seconds) || 0;
+  if (seconds < 0) seconds = 0;
+  if (playbackInterval) {
+    // Simulated playback: advance the simulated clock.
+    const total = Number(audioPlayer.duration) || 0;
+    simulatedTime = total ? Math.min(seconds, total) : seconds;
+    try { audioPlayer.currentTime = simulatedTime; } catch (e) {}
+    const curEl = document.getElementById('playerCurrentTime');
+    if (curEl) curEl.textContent = formatTime(simulatedTime);
+    const dur = getEffectiveDuration();
+    if (dur) {
+      document.getElementById('playerProgress').style.width = Math.min(100, (simulatedTime / dur) * 100) + '%';
+    }
+    return;
+  }
+  if (audioPlayer && audioPlayer.src) {
+    audioPlayer.currentTime = seconds;
+  }
+}
+
 function seekToProgressPosition(clientX) {
   const progressBar = document.getElementById('playerProgressBar');
-  if (!progressBar || !audioPlayer.duration) return;
+  const duration = getEffectiveDuration();
+  if (!progressBar || !duration) return;
   const rect = progressBar.getBoundingClientRect();
   const pos = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
-  audioPlayer.currentTime = pos * audioPlayer.duration;
+  seekToTime(pos * duration);
   progressBar.style.setProperty('--seek-pos', `${pos * 100}%`);
   updatePlayerProgress();
 }
@@ -681,31 +858,43 @@ function seekToProgressPosition(clientX) {
 function updatePreviewTime(clientX) {
   const progressBar = document.getElementById('playerProgressBar');
   const progressLabel = document.getElementById('playerProgressLabel');
-  if (!progressBar || !audioPlayer.duration) return;
+  const duration = getEffectiveDuration();
+  if (!progressBar) return;
+  if (!duration) {
+    // No playable duration yet — keep the hover label hidden.
+    progressBar.classList.add('no-duration');
+    return;
+  }
+  progressBar.classList.remove('no-duration');
   const rect = progressBar.getBoundingClientRect();
   const pos = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
-  const time = pos * audioPlayer.duration;
+  const time = pos * duration;
   const currentTimeEl = document.getElementById('playerCurrentTime');
   if (currentTimeEl) {
     currentTimeEl.textContent = formatTime(time);
   }
   if (progressLabel) {
     progressLabel.textContent = formatTime(time);
-    progressLabel.style.left = `${pos * 100}%`;
-    progressLabel.classList.add('visible');
+    // Clamp the label so it never overflows the bar edges.
+    const px = pos * rect.width;
+    const clamped = Math.min(Math.max(px, 24), rect.width - 24);
+    progressLabel.style.left = clamped + 'px';
   }
   progressBar.style.setProperty('--seek-pos', `${pos * 100}%`);
 }
 
 function resetPreviewTime() {
   const currentTimeEl = document.getElementById('playerCurrentTime');
-  const progressLabel = document.getElementById('playerProgressLabel');
-  if (currentTimeEl && audioPlayer.duration) {
+  const progressBar = document.getElementById('playerProgressBar');
+  if (currentTimeEl && getEffectiveDuration()) {
     currentTimeEl.textContent = formatTime(audioPlayer.currentTime || 0);
   }
-  if (progressLabel) {
-    progressLabel.classList.remove('visible');
+  // Hide the hover label if there is no duration to scrub to.
+  if (progressBar && !getEffectiveDuration()) {
+    progressBar.classList.add('no-duration');
   }
+  // Note: label visibility itself is driven by CSS (:hover / .is-dragging),
+  // so it auto-hides the moment the pointer leaves the bar — no JS needed.
 }
 
 function handlePlayerKeyboardShortcuts(e) {
@@ -720,14 +909,14 @@ function handlePlayerKeyboardShortcuts(e) {
 
   if (e.code === 'ArrowLeft') {
     e.preventDefault();
-    audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - 10);
+    seekToTime(audioPlayer.currentTime - 10);
     updatePlayerProgress();
     return;
   }
 
   if (e.code === 'ArrowRight') {
     e.preventDefault();
-    audioPlayer.currentTime = Math.min(audioPlayer.duration || 0, audioPlayer.currentTime + 10);
+    seekToTime(audioPlayer.currentTime + 10);
     updatePlayerProgress();
     return;
   }
@@ -810,6 +999,8 @@ async function playEpisode(podcastId, episodeIndex) {
     episodeItems.forEach((item, idx) => {
       item.classList.toggle('playing', idx === episodeIndex);
     });
+    // 详情页右侧的字幕跟着切
+    loadReaderTranscript();
   }
 
   // YouTube content: embed player instead of audio
@@ -832,7 +1023,7 @@ async function playEpisode(podcastId, episodeIndex) {
       showToast('当前音频暂时无法播放，请稍后再试');
     });
   } else {
-    const fallbackAudioUrl = `${MEDIA_BASE}/media/demo-audio.wav`;
+    const fallbackAudioUrl = `${MEDIA_BASE}/media/episodes/audio/seed-fallback.wav`;
     if (playbackInterval) {
       clearInterval(playbackInterval);
       playbackInterval = null;
@@ -951,7 +1142,7 @@ function updatePlayerProgress() {
     highlightTranscript();
     return;
   }
-  const duration = Number.isFinite(audioPlayer.duration) && audioPlayer.duration > 0 ? audioPlayer.duration : 0;
+  const duration = getEffectiveDuration();
   if (duration) {
     const progress = (audioPlayer.currentTime / duration) * 100;
     document.getElementById('playerProgress').style.width = `${Math.min(progress, 100)}%`;
@@ -1026,41 +1217,73 @@ function setTranscriptMode(mode) {
   renderTranscript();
 }
 
+/* 单个英文词 -> 带水平标注的 <span>。
+   - 句中首字母大写的词按专有名词处理（人名/地名），不标注
+   - WordDict 就绪后按用户所选水平给出 'syll'（本级考纲）| 'beyond'（超纲）
+   - 小字中文只取第一个义项，完整释义留给点击后的弹窗 */
+function renderWordToken(token, isFirstWord) {
+    const m = String(token).match(/^([^A-Za-z]*)([A-Za-z][A-Za-z']*)([^A-Za-z]*)$/);
+    if (!m) return esc(token);
+    const pre = m[1], core = m[2], post = m[3];
+    if (!isFirstWord && /^[A-Z]/.test(core)) return esc(token);   // 专有名词
+    const w = core.toLowerCase().replace(/\u2019/g, "'");
+    const cls = WordDict.ready() ? WordDict.classify(w, readerLevel) : null;
+    if (!cls) return esc(token);
+    const zh = WordDict.shortGloss(w, 8);
+    const zhHtml = zh ? `<i class="tw-zh">${esc(zh)}</i>` : '';
+    return `${esc(pre)}<span class="tw tw-${cls}" data-word="${esc(w)}">${esc(core)}${zhHtml}</span>${esc(post)}`;
+}
+
 function renderClickableWords(text) {
-  const escaped = esc(text);
-  return escaped.split(/(\s+)/).map(tok => {
+  let i = 0;
+  return String(text == null ? '' : text).split(/(\s+)/).map(tok => {
+    if (!tok) return '';
     if (/^\s+$/.test(tok)) return tok;
-    const word = tok.replace(/[^A-Za-z']/g, '').toLowerCase();
-    if (!word) return tok;
-    return `<span class="transcript-word" data-word="${word}">${tok}</span>`;
+    return renderWordToken(tok, i++ === 0);
   }).join('');
 }
 
-function renderTranscript() {
-  const body = document.getElementById('transcriptBody');
-  if (!transcriptLines.length) {
-    body.innerHTML = '<div class="transcript-empty"><i class="fas fa-file-lines"></i><p>本节目暂无字幕 / 文稿</p></div>';
-    return;
-  }
-  body.innerHTML = transcriptLines.map((line, idx) => {
-    const enHtml = (transcriptMode !== 'zh' && line.en) ? `<div class="transcript-en">${renderClickableWords(line.en)}</div>` : '';
-    const zhHtml = (transcriptMode !== 'en' && line.zh) ? `<div class="transcript-zh">${esc(line.zh)}</div>` : '';
-    const timeHtml = line.time != null ? `<span class="transcript-time" data-seek="${idx}">${formatTime(line.time)}</span>` : '';
+/* 一行字幕 -> HTML。variant='modal' 时额外带「讲解 / 跟读」按钮。 */
+function transcriptLineHTML(line, idx, variant) {
+  const enHtml = (transcriptMode !== 'zh' && line.en)
+    ? `<div class="transcript-en">${renderClickableWords(line.en)}</div>` : '';
+  const zhHtml = (transcriptMode !== 'en' && line.zh)
+    ? `<div class="transcript-zh">${esc(line.zh)}</div>` : '';
+  const timeHtml = line.time != null
+    ? `<span class="transcript-time" data-seek="${idx}">${formatTime(line.time)}</span>` : '';
+  let actions = '';
+  if (variant === 'modal') {
     const locked = !hasFeature('ai_explain');
-    return `
+    actions = `
+        <div class="transcript-actions">
+          <button class="transcript-act" data-explain="${idx}" ${locked ? 'disabled title="会员功能"' : ''}><i class="fas fa-brain"></i> 讲解</button>
+          <button class="transcript-act" data-shadow="${idx}" ${locked ? 'disabled title="会员功能"' : ''}><i class="fas fa-microphone"></i> 跟读</button>
+        </div>
+        <div class="transcript-explain" id="explain-${idx}" style="display:none"></div>`;
+  }
+  return `
       <div class="transcript-line ${idx === lastActiveLineIdx ? 'active' : ''}" data-idx="${idx}">
         ${timeHtml}
         <div class="transcript-text">
           ${enHtml}
           ${zhHtml}
         </div>
-        <div class="transcript-actions">
-          <button class="transcript-act" data-explain="${idx}" ${locked ? 'disabled title="会员功能"' : ''}><i class="fas fa-brain"></i> 讲解</button>
-          <button class="transcript-act" data-shadow="${idx}" ${locked ? 'disabled title="会员功能"' : ''}><i class="fas fa-microphone"></i> 跟读</button>
-        </div>
-        <div class="transcript-explain" id="explain-${idx}" style="display:none"></div>
+        ${actions}
       </div>`;
-  }).join('');
+}
+
+function transcriptEmptyHTML() {
+  return '<div class="transcript-empty"><i class="fas fa-file-lines"></i><p>本节目暂无字幕 / 文稿</p></div>';
+}
+
+function renderTranscript() {
+  const body = document.getElementById('transcriptBody');
+  if (!body) return;
+  if (!transcriptLines.length) {
+    body.innerHTML = transcriptEmptyHTML();
+    return;
+  }
+  body.innerHTML = transcriptLines.map((line, idx) => transcriptLineHTML(line, idx, 'modal')).join('');
 
   body.querySelectorAll('.transcript-time').forEach(el => {
     el.addEventListener('click', (e) => { e.stopPropagation(); seekTranscriptLine(Number(el.dataset.seek)); });
@@ -1079,13 +1302,149 @@ function renderTranscript() {
   });
 }
 
+/* ===== 播放详情页的实时字幕 ===== */
+function setReaderNow(title) {
+  const el = document.getElementById('readerNowTitle');
+  if (el) el.textContent = title || '尚未选择剧集';
+}
+
+function renderReaderTranscript() {
+  const box = document.getElementById('readerTranscript');
+  const ph = document.getElementById('readerPlaceholder');
+  if (!box) return;
+  if (!transcriptLines.length) {
+    box.style.display = 'none';
+    if (ph) {
+      ph.style.display = '';
+      const p = ph.querySelector('p');
+      const sub = ph.querySelector('span');
+      if (p && sub) {
+        if (currentEpisodeData && currentEpisodeData.title) {
+          p.textContent = '这一集没有字幕';
+          sub.textContent = '跑一次爬虫的 --backfill 可以补上字幕。';
+        } else {
+          p.textContent = '从左侧选一集开始播放';
+          sub.textContent = '播放时字幕会跟随语音逐句高亮，生词按你选的水平自动标注中文';
+        }
+      }
+    }
+    return;
+  }
+  if (ph) ph.style.display = 'none';
+  box.style.display = '';
+  box.innerHTML = transcriptLines.map((line, idx) => transcriptLineHTML(line, idx, 'reader')).join('');
+  box.querySelectorAll('.transcript-time').forEach(el => {
+    el.addEventListener('click', (e) => { e.stopPropagation(); seekTranscriptLine(Number(el.dataset.seek)); });
+  });
+  lastActiveLineIdx = -1;
+  highlightTranscript();
+}
+
+/* 把当前剧集的字幕装进阅读器（切集 / 换水平 / 换显示模式时调用） */
+function loadReaderTranscript() {
+  if (!currentEpisodeData) return;
+  ensureReaderDict();
+  setReaderNow(currentEpisodeData.title);
+  transcriptLines = parseTranscript(currentEpisodeData.subtitle_en, currentEpisodeData.subtitle_zh);
+  lastActiveLineIdx = -1;
+  renderReaderTranscript();
+  updateReaderLegend();   // 换集后统计也要跟着变（词库可能已就绪）
+}
+
+/* 水平 / 中文开关 / 显示模式 变化后重绘 */
+function refreshReader() {
+  if (!transcriptLines.length) return;
+  renderReaderTranscript();
+  updateReaderLegend();
+}
+
+/* 图例上显示本集大概有多少词会被标 */
+function updateReaderLegend() {
+  const hint = document.querySelector('.reader-legend-hint');
+  if (!hint) return;
+  if (!WordDict.ready()) { hint.textContent = '词库加载中…'; return; }
+  let syll = 0, beyond = 0;
+  transcriptLines.forEach(l => {
+    (l.en || '').split(/\s+/).forEach((tok, i) => {
+      const cls = WordDict.classify(tok.replace(/^[^A-Za-z]+/, '').replace(/[^A-Za-z']+$/, '').toLowerCase(), readerLevel);
+      if (cls === 'syll') syll++;
+      else if (cls === 'beyond') beyond++;
+    });
+  });
+  hint.textContent = `本集标注：考纲词 ${syll} · 超纲词 ${beyond}`;
+}
+
+function applyReaderLevel(level) {
+  readerLevel = level;
+  try { localStorage.setItem('lbReaderLevel', level); } catch (e) {}
+  const sel = document.getElementById('readerLevel');
+  if (sel) sel.value = level;
+  refreshReader();
+}
+
+function applyReaderGloss(on) {
+  readerGlossOn = on;
+  try { localStorage.setItem('lbReaderGloss', on ? '1' : '0'); } catch (e) {}
+  document.body.classList.toggle('hide-gloss', !on);
+  const btn = document.getElementById('readerZhToggle');
+  if (btn) btn.classList.toggle('active', on);
+}
+
+function initReader() {
+  const sel = document.getElementById('readerLevel');
+  if (sel) {
+    sel.value = readerLevel;
+    sel.addEventListener('change', () => { applyReaderLevel(sel.value); });
+  }
+  const zh = document.getElementById('readerZhToggle');
+  if (zh) zh.addEventListener('click', () => { applyReaderGloss(!readerGlossOn); });
+  document.querySelectorAll('.reader-mode').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.reader-mode').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      setTranscriptMode(btn.dataset.mode);
+      if (document.getElementById('transcriptModal').style.display === 'flex') renderTranscript();
+      renderReaderTranscript();
+    });
+  });
+  applyReaderGloss(readerGlossOn);
+
+  // 点击单词 -> 复用已有的生词弹窗（见 initWordPopover），并补上词库释义
+  const scroll = document.getElementById('readerScroll');
+  if (scroll) {
+    scroll.addEventListener('click', (e) => {
+      const w = e.target.closest('.tw');
+      if (w) showWordCard(w.dataset.word, w);
+    });
+  }
+
+  // 词库（~3MB）只在真正进播放详情页时才拉，避免首页/列表页白扛一次带宽
+  if (currentPage === 'detail') ensureReaderDict();
+}
+
+/* 按需加载词库；就绪后重画一次，让标注出现。多次调用只发一次请求。 */
+let readerDictLoading = false;
+function ensureReaderDict() {
+  if (readerDictOk || readerDictLoading) return;
+  readerDictLoading = true;
+  WordDict.load().then(() => {
+    readerDictOk = true;
+    readerDictLoading = false;
+    refreshReader();
+  }).catch(() => {
+    readerDictLoading = false;
+    const hint = document.querySelector('.reader-legend-hint');
+    if (hint) hint.textContent = '词库加载失败，已跳过标注';
+  });
+}
+
 function seekTranscriptLine(idx) {
   const line = transcriptLines[idx];
   if (line && line.time != null) {
     if (ytPlayer && ytPlayer.seekTo) {
       ytPlayer.seekTo(line.time, true);
     } else if (audioPlayer.duration) {
-      audioPlayer.currentTime = line.time;
+      seekToTime(line.time);
       if (audioPlayer.paused) audioPlayer.play().catch(() => {});
     }
   }
@@ -1100,8 +1459,6 @@ function seekTranscriptLine(idx) {
 
 function highlightTranscript() {
   if (!transcriptLines.length) return;
-  const modal = document.getElementById('transcriptModal');
-  if (modal.style.display !== 'flex') return;
   const t = getCurrentPlayTime();
   let active = -1;
   for (let i = 0; i < transcriptLines.length; i++) {
@@ -1110,14 +1467,19 @@ function highlightTranscript() {
   }
   if (active === lastActiveLineIdx) return;
   lastActiveLineIdx = active;
-  document.querySelectorAll('.transcript-line').forEach(el => el.classList.remove('active'));
-  if (active >= 0) {
-    const el = document.querySelector(`.transcript-line[data-idx="${active}"]`);
-    if (el) {
-      el.classList.add('active');
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  // 文稿弹窗 与 详情页阅读器 共用一份 transcriptLines，两边都要跟着高亮
+  ['transcriptBody', 'readerTranscript'].forEach(id => {
+    const box = document.getElementById(id);
+    if (!box || box.offsetParent === null) return;   // 不可见就不动，避免误滚动页面
+    box.querySelectorAll('.transcript-line').forEach(el => el.classList.remove('active'));
+    if (active >= 0) {
+      const el = box.querySelector(`.transcript-line[data-idx="${active}"]`);
+      if (el) {
+        el.classList.add('active');
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
     }
-  }
+  });
 }
 
 // ===== Favorites =====
@@ -1158,7 +1520,12 @@ async function loadFavoritesFromBackend() {
   try {
     const data = await getFavorites();
     const favs = data.results || data || [];
-    favorites = new Set(favs.map(f => `backend-${f.podcast}`));
+    // MERGE (don't overwrite) so a server miss can never wipe locally-stored
+    // favorites. Server is authoritative for what it HAS; local keeps whatever
+    // the server doesn't (e.g. just-toggled items not yet confirmed).
+    for (const f of favs) {
+      if (f && (f.podcast || f.podcast === 0)) favorites.add(`backend-${f.podcast}`);
+    }
     saveFavoritesToStorage();
     updateFavoriteBtn();
     if (currentPage === 'follow') renderFollowPage();
@@ -1175,6 +1542,7 @@ function updateFavoriteBtn() {
     btn.innerHTML = '<i class="far fa-bookmark"></i><span>关注</span>';
     btn.classList.remove('favorited');
   }
+  applyI18n();
 }
 
 function renderFollowPage() {
@@ -1195,6 +1563,7 @@ function renderFollowPage() {
     return;
   }
   renderPodcastGrid('followGrid', favPodcasts);
+  applyI18n();
 }
 
 // ===== Notes =====
@@ -1258,6 +1627,7 @@ async function renderNotesPage() {
       </div>
     </div>
   `).join('');
+  applyI18n();
 }
 
 function openNoteModal() {
@@ -1374,6 +1744,7 @@ async function renderHistoryPage() {
       <div class="history-time">${formatHistoryTime(h.timestamp)}</div>
     </div>
   `).join('');
+  applyI18n();
 }
 
 function calculateStreak() {
@@ -1421,7 +1792,7 @@ function initCategoriesPage() {
   ];
 
   grid.innerHTML = categoryList.map(cat => {
-    const count = PODCAST_DATA.filter(p => p.category === cat.key).length;
+    const count = getVisiblePodcasts().filter(p => p.category === cat.key).length;
     return `
       <div class="category-page-card" style="border-left: 4px solid ${cat.color}" onclick="selectCategory('${cat.key}')">
         <div class="category-page-icon" style="color: ${cat.color}">
@@ -1429,12 +1800,13 @@ function initCategoriesPage() {
         </div>
         <div class="category-page-info">
           <div class="category-page-name">${cat.label}</div>
-          <div class="category-page-count">${count} 个播客</div>
+          <div class="category-page-count">${count} <span data-i18n="个播客">个播客</span></div>
         </div>
         <i class="fas fa-chevron-right category-page-arrow"></i>
       </div>
     `;
   }).join('');
+  applyI18n();
 }
 
 function selectCategory(categoryKey) {
@@ -1453,7 +1825,9 @@ function selectCategory(categoryKey) {
 function initSidebar() {
   const sidebar = document.getElementById('sidebar');
   const toggle = document.getElementById('sidebarToggle');
-  const sidebarItems = document.querySelectorAll('.sidebar-nav .sidebar-item');
+  // Include both main nav and bottom utility items (language, etc.).
+  // Exclude the theme toggle: it has its own dedicated handler.
+  const sidebarItems = document.querySelectorAll('.sidebar-nav .sidebar-item, .sidebar-bottom .sidebar-item:not(#themeToggleBtn)');
 
   if (toggle) {
     toggle.addEventListener('click', () => {
@@ -1501,6 +1875,8 @@ function initSidebar() {
       } else if (page === 'vocab') {
         if (!isLoggedIn()) { showAuthModal('login'); return; }
         navigateTo('vocab');
+      } else if (page === 'language') {
+        navigateTo('language');
       }
     });
   });
@@ -1761,10 +2137,11 @@ async function renderMembershipPage() {
     const paid = currentTiers.find(t => t.slug !== 'free');
     if (paid && Number(paid.price_monthly) > 0) {
       const save = Math.round((1 - Number(paid.price_yearly) / (Number(paid.price_monthly) * 12)) * 100);
-      if (save > 0) saveEl.textContent = `省 ${save}%`;
+      if (save > 0) saveEl.innerHTML = `<span data-i18n="省">省</span> ${save}%`;
     }
   }
   renderPricingInto('pricingGrid');
+  applyI18n();
  } catch (e) {
     const cur = document.getElementById('membershipCurrent');
     if (cur) cur.innerHTML = '<div class="empty-state"><p>会员页渲染出错：' + esc(String((e && e.message) || e)) + '</p></div>';
@@ -1808,7 +2185,7 @@ function renderPricingInto(containerId) {
       price = '0'; perLabel = '';
     } else if (billingPeriod === 'yearly') {
       price = t.price_yearly; perLabel = '/年';
-      note = `约合 ¥${(Number(t.price_yearly) / 12).toFixed(0)}/月`;
+      note = `约合 ¥${(Number(t.price_yearly) / 12).toFixed(0)}<span data-i18n="/月">/月</span>`;
     } else {
       price = t.price_monthly; perLabel = '/月';
     }
@@ -1827,6 +2204,42 @@ function renderPricingInto(containerId) {
   }).join('');
   grid.querySelectorAll('.pricing-btn').forEach(btn => {
     btn.addEventListener('click', () => openPricing(btn.dataset.tier));
+  });
+  wireSpotlightCards(grid);
+  applyI18n();
+}
+
+// QClaw-style spotlight: glow + subtle tilt follow the cursor on each card
+function wireSpotlightCards(grid) {
+  if (!grid) return;
+  const MAX_TILT = 4; // degrees — keep it subtle
+  grid.querySelectorAll('.pricing-card').forEach(card => {
+    if (card.dataset.spot) return;
+    card.dataset.spot = '1';
+    let raf = null;
+    card.addEventListener('pointermove', (e) => {
+      const r = card.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        // glow position (px)
+        card.style.setProperty('--mx', `${x}px`);
+        card.style.setProperty('--my', `${y}px`);
+        // subtle tilt toward cursor
+        const px = (x / r.width) - 0.5;   // -0.5 .. 0.5
+        const py = (y / r.height) - 0.5;
+        card.style.setProperty('--ry', `${(px * MAX_TILT).toFixed(2)}deg`);
+        card.style.setProperty('--rx', `${(-py * MAX_TILT).toFixed(2)}deg`);
+      });
+    });
+    card.addEventListener('pointerleave', () => {
+      card.style.setProperty('--mx', '50%');
+      card.style.setProperty('--my', '-20%');
+      card.style.setProperty('--rx', '0deg');
+      card.style.setProperty('--ry', '0deg');
+    });
   });
 }
 
@@ -1867,14 +2280,15 @@ function showPaymentModal(tierSlug) {
     <div class="pay-order-row"><span>会员方案</span><span>${esc(tier.name)}</span></div>
     <div class="pay-order-row"><span>计费周期</span><span>${billingPeriod === 'yearly' ? '年付' : '月付'}</span></div>
     <div class="pay-order-row total"><span>应付金额</span><span class="pay-amount">¥${price}</span></div>
-    <div class="pay-order-row" style="font-size:12px;color:var(--text-muted)"><span></span><span>约合 ¥${perMonth}/${perLabel}</span></div>`;
+    <div class="pay-order-row" style="font-size:12px;color:var(--text-muted)"><span></span><span>约合 ¥${perMonth}<span data-i18n="${perLabel}">/${perLabel}</span></span></div>`;
   document.querySelectorAll('#payMethods .pay-method').forEach(m => {
     m.classList.toggle('active', m.dataset.method === 'wechat');
   });
   const btn = document.getElementById('payConfirmBtn');
-  if (btn) { btn.disabled = false; btn.style.display = ''; btn.textContent = `确认支付 ¥${price}`; }
+  if (btn) { btn.disabled = false; btn.style.display = ''; btn.innerHTML = `确认支付 <span class="pay-amt">¥${price}</span>`; }
   const modal = document.getElementById('paymentModal');
   modal.style.display = 'flex';
+  applyI18n();
 }
 
 function setupPaymentModal() {
@@ -1899,6 +2313,7 @@ async function submitPayment() {
   const body = document.getElementById('payBody');
   btn.disabled = true;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 支付处理中…';
+  applyI18n();
   await new Promise(r => setTimeout(r, 1500));
   try {
     const res = await subscribeMembership(paymentTierSlug, billingPeriod, paymentMethod);
@@ -1915,6 +2330,7 @@ async function submitPayment() {
   } catch (e) {
     btn.disabled = false;
     btn.innerHTML = '确认支付';
+    applyI18n();
     showToast((e && e.detail) || '支付失败，请重试');
   }
 }
@@ -1933,8 +2349,9 @@ function showPaySuccess(membership) {
   box.innerHTML = `
     <div class="pay-success-icon"><i class="fas fa-check"></i></div>
     <div class="pay-success-title">开通成功！</div>
-    <div class="pay-success-sub">${esc(tierName)} 已激活，立即享受全部学习功能</div>
-    ${orderId ? `<div class="pay-success-sub" style="font-size:11px">订单号：${esc(orderId)}</div>` : ''}`;
+    <div class="pay-success-sub">${esc(tierName)} <span data-i18n="已激活，立即享受全部学习功能">已激活，立即享受全部学习功能</span></div>
+    ${orderId ? `<div class="pay-success-sub" style="font-size:11px"><span data-i18n="订单号：">订单号：</span>${esc(orderId)}</div>` : ''}`;
+  applyI18n();
   showToast('会员开通成功！' + tierName);
   setTimeout(() => {
     const modal = document.getElementById('paymentModal');
@@ -1976,6 +2393,7 @@ async function renderVocabPage() {
       showToast('已删除');
     });
   });
+  applyI18n();
 }
 
 function requireFeature(name, label) {
@@ -2014,6 +2432,8 @@ async function explainLine(idx, container) {
 function initWordPopover() {
   const pop = document.getElementById('wordPopover');
   const wordEl = document.getElementById('wordPopoverWord');
+  const tagsEl = document.getElementById('wordPopoverTags');
+  const glossEl = document.getElementById('wordPopoverGloss');
   const addBtn = document.getElementById('wordAddBtn');
   const exBtn = document.getElementById('wordExplainBtn');
   let selectedWord = '';
@@ -2045,21 +2465,52 @@ function initWordPopover() {
     await explainLineText(selectedWord, holder);
   });
 
-  // delegate clicks on transcript english words
+  // 点击字幕里的任意单词（详情页 .tw / 旧文稿 .transcript-word）
   document.addEventListener('click', (e) => {
-    const w = e.target.closest('.transcript-word');
+    const w = e.target.closest('.tw, .transcript-word');
     if (w) {
       selectedWord = w.dataset.word;
-      wordEl.textContent = selectedWord;
-      const rect = w.getBoundingClientRect();
-      pop.style.display = 'block';
-      pop.style.top = (window.scrollY + rect.bottom + 6) + 'px';
-      pop.style.left = Math.max(8, rect.left) + 'px';
+      showWordCard(selectedWord, w);
       e.stopPropagation();
       return;
     }
     if (!pop.contains(e.target)) hide();
   });
+}
+
+/* 单词卡片：词库释义 + 考纲归属 + 加入生词本 / AI 讲解 */
+function showWordCard(word, anchorEl) {
+  const pop = document.getElementById('wordPopover');
+  if (!pop || !word) return;
+  const wordEl = document.getElementById('wordPopoverWord');
+  const tagsEl = document.getElementById('wordPopoverTags');
+  const glossEl = document.getElementById('wordPopoverGloss');
+  const holder = document.getElementById('wordExplainHolder');
+
+  wordEl.textContent = word;
+  glossEl.textContent = WordDict.ready() ? (WordDict.fullGloss(word) || '词库暂无释义') : '词库加载中…';
+
+  const tags = WordDict.ready() ? WordDict.tagsOf(word) : [];
+  if (tags.length) {
+    tagsEl.innerHTML = tags.map(t => `<span class="word-tag">${esc(t)}</span>`).join('');
+  } else if (WordDict.ready() && WordDict.fullGloss(word)) {
+    tagsEl.innerHTML = '<span class="word-tag muted">超出所有考纲</span>';
+  } else {
+    tagsEl.innerHTML = '';
+  }
+  holder.style.display = 'none';
+  holder.innerHTML = '';
+  pop.classList.remove('expanded');
+
+  pop.style.display = 'block';
+  const r = anchorEl.getBoundingClientRect();
+  const w = 300;
+  const left = Math.min(Math.max(8, r.left), window.innerWidth - w - 12);
+  let top = r.bottom + 8;
+  // 靠近底部时向上弹
+  if (top + 220 > window.innerHeight) top = Math.max(8, r.top - 228);
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
 }
 
 async function explainLineText(text, container) {
@@ -2325,7 +2776,7 @@ function showToast(message) {
     overflow: hidden;
     text-overflow: ellipsis;
   `;
-  toast.textContent = message;
+  toast.textContent = t(message);
   document.body.appendChild(toast);
 
   setTimeout(() => {
@@ -2423,3 +2874,396 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e)
 
 // Initialize theme (must run before DOMContentLoaded-dependent code that sets data-theme)
 initTheme();
+
+// ===== Language Settings =====
+
+function loadLanguageSettings() {
+  try {
+    const storedApp = localStorage.getItem('app_language');
+    const storedTrans = localStorage.getItem('translation_language');
+    if (storedApp && SUPPORTED_LANGUAGES.some(l => l.code === storedApp)) appLanguage = storedApp;
+    if (storedTrans && SUPPORTED_LANGUAGES.some(l => l.code === storedTrans)) translationLanguage = storedTrans;
+  } catch (e) {}
+  applyLanguageSettings();
+}
+
+function saveLanguageSettings() {
+  try {
+    localStorage.setItem('app_language', appLanguage);
+    localStorage.setItem('translation_language', translationLanguage);
+  } catch (e) {}
+  applyLanguageSettings();
+}
+
+function applyLanguageSettings() {
+  // Persist the chosen display language on the html element for CSS/SSR hooks.
+  document.documentElement.setAttribute('lang', appLanguage);
+  // Dispatch a small event so other components can react if needed.
+  try {
+    window.dispatchEvent(new CustomEvent('languagechange', { detail: { appLanguage, translationLanguage } }));
+  } catch (e) {}
+  // Translate the whole UI into the chosen display language.
+  applyI18n();
+}
+
+// ===== Global i18n engine =====
+// Every UI string is keyed by its Chinese (source) text. applyI18n() walks the
+// whole DOM and translates any element whose own text (or a supported attribute)
+// matches a key. Elements built from backend data (podcast titles, transcripts,
+// notes content, etc.) are never in the dictionary, so they are left untouched.
+// Original (Chinese) text is cached on the element so switching languages always
+// translates from the source — round-trips never get "stuck" on a translation.
+const I18N = {
+  // ---- Sidebar / nav ----
+  '主页': { 'zh-TW': '主頁', 'en': 'Home', 'ja': 'ホーム', 'ko': '홈' },
+  '关注': { 'zh-TW': '關注', 'en': 'Following', 'ja': 'フォロー', 'ko': '팔로잉' },
+  '笔记': { 'zh-TW': '筆記', 'en': 'Notes', 'ja': 'ノート', 'ko': '노트' },
+  '学习记录': { 'zh-TW': '學習記錄', 'en': 'History', 'ja': '学習記録', 'ko': '학습 기록' },
+  '生词本': { 'zh-TW': '生字本', 'en': 'Vocabulary', 'ja': '単語帳', 'ko': '단어장' },
+  '会员中心': { 'zh-TW': '會員中心', 'en': 'Membership', 'ja': 'メンバーシップ', 'ko': '멤버십' },
+  'blog': { 'zh-TW': '部落格', 'en': 'Blog', 'ja': 'ブログ', 'ko': '블로그' },
+  '主题切换': { 'zh-TW': '主題切換', 'en': 'Theme', 'ja': 'テーマ切替', 'ko': '테마 전환' },
+  '语言设置': { 'zh-TW': '語言設定', 'en': 'Language Settings', 'ja': '言語設定', 'ko': '언어 설정' },
+  '联系我们': { 'zh-TW': '聯繫我們', 'en': 'Contact', 'ja': 'お問い合わせ', 'ko': '문의하기' },
+  '下载 App': { 'zh-TW': '下載 App', 'en': 'Download App', 'ja': 'アプリをダウンロード', 'ko': '앱 다운로드' },
+  '隐私政策': { 'zh-TW': '隱私政策', 'en': 'Privacy', 'ja': 'プライバシー', 'ko': '개인정보' },
+  '用户': { 'zh-TW': '用戶', 'en': 'User', 'ja': 'ユーザー', 'ko': '사용자' },
+  '登录': { 'zh-TW': '登入', 'en': 'Sign in', 'ja': 'ログイン', 'ko': '로그인' },
+  // ---- Search ----
+  '搜索播客、节目、作者': { 'zh-TW': '搜尋播客、節目、作者', 'en': 'Search podcasts, episodes, authors', 'ja': 'ポッドキャスト、エピソード、作者を検索', 'ko': '팟캐스트, 에피소드, 저자 검색' },
+  // ---- Page titles / sections ----
+  '🔥 热门节目': { 'zh-TW': '🔥 熱門節目', 'en': '🔥 Popular Programs', 'ja': '🔥 人気番組', 'ko': '🔥 인기 프로그램' },
+  '热门推荐播客': { 'zh-TW': '熱門推薦播客', 'en': 'Recommended Podcasts', 'ja': 'おすすめポッドキャスト', 'ko': '추천 팟캐스트' },
+  '🆕 最新更新': { 'zh-TW': '🆕 最新更新', 'en': '🆕 Latest Updates', 'ja': '🆕 最新アップデート', 'ko': '🆕 최신 업데이트' },
+  '📗 初级难度': { 'zh-TW': '📗 初級難度', 'en': '📗 Beginner', 'ja': '📗 初級レベル', 'ko': '📗 초급' },
+  '📘 中级难度': { 'zh-TW': '📘 中級難度', 'en': '📘 Intermediate', 'ja': '📘 中級レベル', 'ko': '📘 중급' },
+  '📕 高级难度': { 'zh-TW': '📕 高級難度', 'en': '📕 Advanced', 'ja': '📕 上級レベル', 'ko': '📕 고급' },
+  '📂 精选分类': { 'zh-TW': '📂 精選分類', 'en': '📂 Categories', 'ja': '📂 カテゴリー', 'ko': '📂 카테고리' },
+  '🔖 我的关注': { 'zh-TW': '🔖 我的關注', 'en': '🔖 My Following', 'ja': '🔖 フォロー一覧', 'ko': '🔖 내 팔로잉' },
+  '📝 我的笔记': { 'zh-TW': '📝 我的筆記', 'en': '📝 My Notes', 'ja': '📝 マイノート', 'ko': '📝 내 노트' },
+  '📊 学习记录': { 'zh-TW': '📊 學習記錄', 'en': '📊 Learning History', 'ja': '📊 学習記録', 'ko': '📊 학습 기록' },
+  '最近播放': { 'zh-TW': '最近播放', 'en': 'Recent Plays', 'ja': '最近再生', 'ko': '최근 재생' },
+  '📰 Blog': { 'zh-TW': '📰 部落格', 'en': '📰 Blog', 'ja': '📰 ブログ', 'ko': '📰 블로그' },
+  '📚 我的生词本': { 'zh-TW': '📚 我的生字本', 'en': '📚 My Vocabulary', 'ja': '📚 マイ単語帳', 'ko': '📚 내 단어장' },
+  '选择适合你的会员方案': { 'zh-TW': '選擇適合你的會員方案', 'en': 'Choose your membership plan', 'ja': 'あなたに合ったプランを選択', 'ko': '맞는 멤버십 플랜을 선택하세요' },
+  '搜索结果': { 'zh-TW': '搜尋結果', 'en': 'Search Results', 'ja': '検索結果', 'ko': '검색 결과' },
+  '播客列表': { 'zh-TW': '播客列表', 'en': 'Episodes', 'ja': 'エピソード一覧', 'ko': '에피소드 목록' },
+  '返回': { 'zh-TW': '返回', 'en': 'Back', 'ja': '戻る', 'ko': '뒤로' },
+  // ---- Empty states ----
+  '去发现感兴趣的播客吧！': { 'zh-TW': '去發現感興趣的播客吧！', 'en': 'Go discover podcasts you like!', 'ja': '気になるポッドキャストを見つけよう！', 'ko': '관심 있는 팟캐스트를 찾아보세요!' },
+  '在播放节目时可以添加笔记哦！': { 'zh-TW': '在播放節目時可以添加筆記哦！', 'en': 'You can add notes while playing episodes!', 'ja': '番組を再生中にノートを追加できます！', 'ko': '재생 중에 노트를 추가할 수 있어요!' },
+  '暂无播放记录': { 'zh-TW': '暫無播放記錄', 'en': 'No playback history yet', 'ja': '再生履歴はまだありません', 'ko': '재생 기록이 없습니다' },
+  '开始收听播客来记录你的学习历程吧！': { 'zh-TW': '開始收聽播客來記錄你的學習歷程吧！', 'en': 'Start listening to record your learning journey!', 'ja': 'ポッドキャストを聴いて学習履歴を記録しましょう！', 'ko': '팟캐스트를 들어 학습 기록을 남겨보세요!' },
+  '在文稿中点击任意单词即可加入生词本': { 'zh-TW': '在文稿中點擊任意單字即可加入生字本', 'en': 'Tap any word in the transcript to save it', 'ja': '文字起こしで単語をタップして単語帳に追加', 'ko': '자막에서 단어를 탭하여 단어장에 추가' },
+  '暂无数据': { 'zh-TW': '暫無資料', 'en': 'No data', 'ja': 'データがありません', 'ko': '데이터 없음' },
+  '暂无节目': { 'zh-TW': '暫無節目', 'en': 'No episodes', 'ja': 'エピソードなし', 'ko': '에피소드 없음' },
+  // ---- Stats ----
+  '收听分钟': { 'zh-TW': '收聽分鐘', 'en': 'Minutes listened', 'ja': '再生分数', 'ko': '청취 분' },
+  '播放集数': { 'zh-TW': '播放集數', 'en': 'Episodes played', 'ja': '再生エピソード数', 'ko': '재생 에피소드 수' },
+  '连续天数': { 'zh-TW': '連續天數', 'en': 'Day streak', 'ja': '連続日数', 'ko': '연속 일수' },
+  '周目标': { 'zh-TW': '週目標', 'en': 'Weekly goal', 'ja': '週間目標', 'ko': '주간 목표' },
+  // ---- Auth ----
+  '欢迎回来': { 'zh-TW': '歡迎回來', 'en': 'Welcome back', 'ja': 'おかえりなさい', 'ko': '다시 오신 것을 환영합니다' },
+  '登录你的 ListenBook 账号': { 'zh-TW': '登入你的 ListenBook 帳號', 'en': 'Sign in to your ListenBook account', 'ja': 'ListenBookアカウントにログイン', 'ko': 'ListenBook 계정에 로그인하세요' },
+  '用户名': { 'zh-TW': '用戶名', 'en': 'Username', 'ja': 'ユーザー名', 'ko': '사용자 이름' },
+  '请输入用户名': { 'zh-TW': '請輸入用戶名', 'en': 'Enter username', 'ja': 'ユーザー名を入力', 'ko': '사용자 이름을 입력하세요' },
+  '密码': { 'zh-TW': '密碼', 'en': 'Password', 'ja': 'パスワード', 'ko': '비밀번호' },
+  '请输入密码': { 'zh-TW': '請輸入密碼', 'en': 'Enter password', 'ja': 'パスワードを入力', 'ko': '비밀번호를 입력하세요' },
+  '请输入密码（至少8位）': { 'zh-TW': '請輸入密碼（至少8位）', 'en': 'Enter password (at least 8 characters)', 'ja': 'パスワードを入力（8文字以上）', 'ko': '비밀번호를 입력하세요(8자 이상)' },
+  '还没有账号？立即注册': { 'zh-TW': '還沒有帳號？立即註冊', 'en': 'No account? Sign up now', 'ja': 'アカウントをお持ちでない方はこちら', 'ko': '계정이 없으신가요? 지금 가입하세요' },
+  '创建账号': { 'zh-TW': '建立帳號', 'en': 'Create account', 'ja': 'アカウント作成', 'ko': '계정 만들기' },
+  '邮箱': { 'zh-TW': '郵箱', 'en': 'Email', 'ja': 'メール', 'ko': '이메일' },
+  '请输入邮箱': { 'zh-TW': '請輸入郵箱', 'en': 'Enter email', 'ja': 'メールを入力', 'ko': '이메일을 입력하세요' },
+  '注册': { 'zh-TW': '註冊', 'en': 'Sign up', 'ja': '登録', 'ko': '가입' },
+  '已有账号？去登录': { 'zh-TW': '已有帳號？去登入', 'en': 'Already have an account? Sign in', 'ja': 'すでにアカウントをお持ちの方', 'ko': '계정이 있으신가요? 로그인하기' },
+  '注册时间': { 'zh-TW': '註冊時間', 'en': 'Joined', 'ja': '登録日', 'ko': '가입일' },
+  '退出登录': { 'zh-TW': '退出登入', 'en': 'Log out', 'ja': 'ログアウト', 'ko': '로그아웃' },
+  '请填写所有字段': { 'zh-TW': '請填寫所有欄位', 'en': 'Please fill in all fields', 'ja': 'すべての項目を入力してください', 'ko': '모든 항목을 입력하세요' },
+  '请填写用户名和密码': { 'zh-TW': '請填寫用戶名和密碼', 'en': 'Enter username and password', 'ja': 'ユーザー名とパスワードを入力してください', 'ko': '사용자 이름과 비밀번호를 입력하세요' },
+  '密码至少需要8个字符': { 'zh-TW': '密碼至少需要8個字符', 'en': 'Password needs at least 8 characters', 'ja': 'パスワードは8文字以上必要です', 'ko': '비밀번호는 8자 이상 필요합니다' },
+  '登录成功！': { 'zh-TW': '登入成功！', 'en': 'Signed in!', 'ja': 'ログイン成功！', 'ko': '로그인 성공!' },
+  '登录失败，请检查用户名和密码': { 'zh-TW': '登入失敗，請檢查用戶名和密碼', 'en': 'Login failed, check username and password', 'ja': 'ログイン失敗、ユーザー名とパスワードを確認してください', 'ko': '로그인 실패, 사용자 이름과 비밀번호를 확인하세요' },
+  '注册成功！': { 'zh-TW': '註冊成功！', 'en': 'Signed up!', 'ja': '登録成功！', 'ko': '가입 성공!' },
+  '注册失败': { 'zh-TW': '註冊失敗', 'en': 'Sign up failed', 'ja': '登録失敗', 'ko': '가입 실패' },
+  '添加失败': { 'zh-TW': '添加失敗', 'en': 'Add failed', 'ja': '追加失敗', 'ko': '추가 실패' },
+  // ---- Note modal ----
+  '添加笔记': { 'zh-TW': '添加筆記', 'en': 'Add Note', 'ja': 'ノートを追加', 'ko': '노트 추가' },
+  '写下你的笔记...': { 'zh-TW': '寫下你的筆記...', 'en': 'Write your note...', 'ja': 'ノートを書く...', 'ko': '노트를 작성하세요...' },
+  '保存笔记': { 'zh-TW': '保存筆記', 'en': 'Save Note', 'ja': 'ノートを保存', 'ko': '노트 저장' },
+  '请输入笔记内容': { 'zh-TW': '請輸入筆記內容', 'en': 'Enter note content', 'ja': 'ノートの内容を入力', 'ko': '노트 내용을 입력하세요' },
+  // ---- Transcript modal ----
+  '文稿': { 'zh-TW': '文稿', 'en': 'Transcript', 'ja': '文字起こし', 'ko': '대본' },
+  '双语': { 'zh-TW': '雙語', 'en': 'Bilingual', 'ja': 'バイリンガル', 'ko': '이중 언어' },
+  '英文': { 'zh-TW': '英文', 'en': 'English', 'ja': '英語', 'ko': '영어' },
+  '中文': { 'zh-TW': '中文', 'en': 'Chinese', 'ja': '中国語', 'ko': '중국어' },
+  '本节目暂无字幕 / 文稿': { 'zh-TW': '本節目暫無字幕 / 文稿', 'en': 'No transcript for this episode', 'ja': 'このエピソードの文字起こしはありません', 'ko': '이 에피소드의 대본이 없습니다' },
+  // ---- Payment modal ----
+  '确认开通会员': { 'zh-TW': '確認開通會員', 'en': 'Confirm Membership', 'ja': 'メンバーシップを確定', 'ko': '멤버십 확인' },
+  '微信支付': { 'zh-TW': '微信支付', 'en': 'WeChat Pay', 'ja': 'WeChat Pay', 'ko': '위챗페이' },
+  '支付宝': { 'zh-TW': '支付寶', 'en': 'Alipay', 'ja': 'Alipay', 'ko': '알리페이' },
+  '银行卡': { 'zh-TW': '銀行卡', 'en': 'Bank Card', 'ja': '銀行カード', 'ko': '신용카드' },
+  '确认支付': { 'zh-TW': '確認支付', 'en': 'Confirm Payment', 'ja': '支払いを確定', 'ko': '결제 확인' },
+  '演示环境，不会真实扣款': { 'zh-TW': '演示環境，不會真實扣款', 'en': 'Demo only, no real charge', 'ja': 'デモ環境です。実際の決済は行われません', 'ko': '데모 환경이며 실제 결제되지 않습니다' },
+  '支付处理中…': { 'zh-TW': '支付處理中…', 'en': 'Processing payment…', 'ja': '支払い処理中…', 'ko': '결제 처리 중…' },
+  '会员方案': { 'zh-TW': '會員方案', 'en': 'Plan', 'ja': 'プラン', 'ko': '플랜' },
+  '计费周期': { 'zh-TW': '計費週期', 'en': 'Billing period', 'ja': '請求周期', 'ko': '청구 주기' },
+  '应付金额': { 'zh-TW': '應付金額', 'en': 'Amount due', 'ja': '支払金額', 'ko': '결제 금액' },
+  '年付': { 'zh-TW': '年付', 'en': 'Yearly', 'ja': '年払い', 'ko': '연간' },
+  '月付': { 'zh-TW': '月付', 'en': 'Monthly', 'ja': '月払い', 'ko': '월간' },
+  '/月': { 'zh-TW': '/月', 'en': '/mo', 'ja': '/月', 'ko': '/월' },
+  '/年': { 'zh-TW': '/年', 'en': '/yr', 'ja': '/年', 'ko': '/년' },
+  '省': { 'zh-TW': '省', 'en': 'Save', 'ja': '節約', 'ko': '절약' },
+  '订单号：': { 'zh-TW': '訂單號：', 'en': 'Order #: ', 'ja': '注文番号：', 'ko': '주문번호: ' },
+  '开通成功！': { 'zh-TW': '開通成功！', 'en': 'Activated!', 'ja': '開通済み！', 'ko': '활성화되었습니다!' },
+  '已激活，立即享受全部学习功能': { 'zh-TW': '已激活，立即享受全部學習功能', 'en': 'Now active — enjoy all learning features', 'ja': '有効になりました。すべての学習機能をお楽しみください', 'ko': '이제 활성화되어 모든 학습 기능을 이용하세요' },
+  '会员': { 'zh-TW': '會員', 'en': 'Membership', 'ja': 'メンバーシップ', 'ko': '멤버십' },
+  // ---- Shadow modal ----
+  'AI 跟读评分': { 'zh-TW': 'AI 跟讀評分', 'en': 'AI Shadowing Score', 'ja': 'AI シャドーイング採点', 'ko': 'AI 쉐도잉 채점' },
+  '开始跟读': { 'zh-TW': '開始跟讀', 'en': 'Start Shadowing', 'ja': 'シャドーイング開始', 'ko': '쉐도잉 시작' },
+  '停止': { 'zh-TW': '停止', 'en': 'Stop', 'ja': '停止', 'ko': '정지' },
+  // ---- Word popover ----
+  '加入生词本': { 'zh-TW': '加入生字本', 'en': 'Add to Vocabulary', 'ja': '単語帳に追加', 'ko': '단어장에 추가' },
+  'AI 讲解': { 'zh-TW': 'AI 講解', 'en': 'AI Explain', 'ja': 'AI 解説', 'ko': 'AI 설명' },
+  // ---- Player controls (aria-label / title) ----
+  '上一个': { 'zh-TW': '上一個', 'en': 'Previous', 'ja': '前へ', 'ko': '이전' },
+  '下一个': { 'zh-TW': '下一個', 'en': 'Next', 'ja': '次へ', 'ko': '다음' },
+  '后退10秒': { 'zh-TW': '後退10秒', 'en': 'Back 10s', 'ja': '10秒戻る', 'ko': '10초 뒤로' },
+  '快进10秒': { 'zh-TW': '快進10秒', 'en': 'Forward 10s', 'ja': '10秒進む', 'ko': '10초 앞으로' },
+  '播放/暂停': { 'zh-TW': '播放/暫停', 'en': 'Play/Pause', 'ja': '再生/一時停止', 'ko': '재생/일시정지' },
+  '切换深色/浅色主题': { 'zh-TW': '切換深色/淺色主題', 'en': 'Toggle dark/light theme', 'ja': 'ダーク/ライトテーマ切替', 'ko': '다크/라이트 테마 전환' },
+  '字幕/文稿': { 'zh-TW': '字幕/文稿', 'en': 'Subtitles/Transcript', 'ja': '字幕/文字起こし', 'ko': '자막/대본' },
+  // ---- Membership ----
+  '会员套餐加载中…': { 'zh-TW': '會員套餐加載中…', 'en': 'Loading membership plans…', 'ja': 'メンバーシッププラン読み込み中…', 'ko': '멤버십 플랜 불러오는 중…' },
+  '会员页渲染出错：': { 'zh-TW': '會員頁渲染出錯：', 'en': 'Membership page error: ', 'ja': 'メンバーシップページエラー：', 'ko': '멤버십 페이지 오류: ' },
+  '会员套餐加载失败': { 'zh-TW': '會員套餐加載失敗', 'en': 'Failed to load membership plans', 'ja': 'メンバーシッププランの読み込みに失敗', 'ko': '멤버십 플랜 로드 실패' },
+  '请检查网络后重试': { 'zh-TW': '請檢查網絡後重試', 'en': 'Check your network and retry', 'ja': 'ネットワークを確認して再試行', 'ko': '네트워크를 확인하고 다시 시도' },
+  '重试': { 'zh-TW': '重試', 'en': 'Retry', 'ja': '再試行', 'ko': '다시 시도' },
+  '最受欢迎': { 'zh-TW': '最受歡迎', 'en': 'Most Popular', 'ja': '一番人気', 'ko': '가장 인기' },
+  '当前方案': { 'zh-TW': '當前方案', 'en': 'Current Plan', 'ja': '現在のプラン', 'ko': '현재 플랜' },
+  '免费使用': { 'zh-TW': '免費使用', 'en': 'Free', 'ja': '無料', 'ko': '무료' },
+  '立即开通': { 'zh-TW': '立即開通', 'en': 'Subscribe Now', 'ja': '今すぐ登録', 'ko': '지금 가입' },
+  '你当前使用的是免费版，开通会员解锁 AI 智能讲解、AI 跟读评分等核心功能。': { 'zh-TW': '你當前使用的是免費版，開通會員解鎖 AI 智能講解、AI 跟讀評分等核心功能。', 'en': 'You are on the free plan. Upgrade to unlock AI Smart Explain, AI Shadowing scoring and other core features.', 'ja': '現在無料版をご利用中です。アップグレードするとAIスマート解説やAIシャドーイング採点などの主要機能が利用できます。', 'ko': '현재 무료 버전을 이용 중입니다. 멤버십에 가입하면 AI 스마트 설명, AI 쉐도잉 채점 등 핵심 기능을 이용할 수 있습니다.' },
+  '解锁 AI 智能讲解、AI 跟读评分等核心学习功能，让英语听力突飞猛进': { 'zh-TW': '解鎖 AI 智能講解、AI 跟讀評分等核心學習功能，讓英語聽力突飛猛進', 'en': 'Unlock AI Smart Explain, AI Shadowing scoring and other core learning features to boost your English listening', 'ja': 'AIスマート解説やAIシャドーイング採点など主要学習機能を解放し、英語リスニングを飛躍させましょう', 'ko': 'AI 스마트 설명, AI 쉐도잉 채점 등 핵심 학습 기능을 해제하여 영어 듣기 실력을 향상시키세요' },
+  '已解锁：': { 'zh-TW': '已解鎖：', 'en': 'Unlocked: ', 'ja': '解放済み：', 'ko': '잠금 해제됨: ' },
+  '取消自动续费': { 'zh-TW': '取消自動續費', 'en': 'Cancel auto-renew', 'ja': '自動更新をキャンセル', 'ko': '자동 갱신 취소' },
+  '当前会员：': { 'zh-TW': '當前會員：', 'en': 'Current membership: ', 'ja': '現在のメンバーシップ：', 'ko': '현재 멤버십: ' },
+  '到期时间：': { 'zh-TW': '到期時間：', 'en': 'Expiry: ', 'ja': '有効期限：', 'ko': '만료일: ' },
+  '免费版': { 'zh-TW': '免費版', 'en': 'Free', 'ja': '無料版', 'ko': '무료 버전' },
+  '长期': { 'zh-TW': '長期', 'en': 'Lifetime', 'ja': '永久', 'ko': '영구' },
+  'ListenBook是英语学习和听力练习平台，通过播客帮助用户提升英语听力水平': { 'zh-TW': 'ListenBook是英語學習和聽力練習平台，通過播客幫助用戶提升英語聽力水平', 'en': 'ListenBook is an English learning and listening practice platform that uses podcasts to improve your listening skills', 'ja': 'ListenBookは英語学習・リスニング練習プラットフォームで、ポッドキャストを通じて英語リスニング力を向上させます', 'ko': 'ListenBook은 팟캐스트를 통해 영어 듣기 실력을 향상시키는 영어 학습 및 리스닝 연습 플랫폼입니다' },
+  // ---- Membership features (featureLabel) ----
+  '基础播放': { 'zh-TW': '基礎播放', 'en': 'Basic Player', 'ja': '基本再生', 'ko': '기본 재생' },
+  '双语字幕': { 'zh-TW': '雙語字幕', 'en': 'Bilingual Subtitles', 'ja': 'バイリンガル字幕', 'ko': '이중 자막' },
+  '中文翻译': { 'zh-TW': '中文翻譯', 'en': 'Chinese Translation', 'ja': '中国語翻訳', 'ko': '중국어 번역' },
+  '学习笔记': { 'zh-TW': '學習筆記', 'en': 'Study Notes', 'ja': '学習ノート', 'ko': '학습 노트' },
+  '收藏关注': { 'zh-TW': '收藏關注', 'en': 'Favorites', 'ja': 'お気に入り', 'ko': '즐겨찾기' },
+  '播放历史': { 'zh-TW': '播放歷史', 'en': 'Playback History', 'ja': '再生履歴', 'ko': '재생 기록' },
+  'AI 智能讲解': { 'zh-TW': 'AI 智能講解', 'en': 'AI Smart Explain', 'ja': 'AI スマート解説', 'ko': 'AI 스마트 설명' },
+  '高清音质': { 'zh-TW': '高清音質', 'en': 'HD Audio', 'ja': '高音質', 'ko': '고음질' },
+  '全部内容': { 'zh-TW': '全部內容', 'en': 'All Content', 'ja': 'すべてのコンテンツ', 'ko': '모든 콘텐츠' },
+  '免广告': { 'zh-TW': '免廣告', 'en': 'Ad-free', 'ja': '広告なし', 'ko': '광고 없음' },
+  '离线下载': { 'zh-TW': '離線下載', 'en': 'Offline Download', 'ja': 'オフライン再生', 'ko': '오프라인 다운로드' },
+  '优先支持': { 'zh-TW': '優先支持', 'en': 'Priority Support', 'ja': '優先サポート', 'ko': '우선 지원' },
+  // ---- Detail / episodes ----
+  '该播客暂无节目': { 'zh-TW': '該播客暫無節目', 'en': 'This podcast has no episodes yet', 'ja': 'このポッドキャストにはエピソードがありません', 'ko': '이 팟캐스트에는 에피소드가 없습니다' },
+  '加载节目中…': { 'zh-TW': '加載節目中…', 'en': 'Loading episodes…', 'ja': 'エピソード読み込み中…', 'ko': '에피소드 불러오는 중…' },
+  '讲解': { 'zh-TW': '講解', 'en': 'Explain', 'ja': '解説', 'ko': '설명' },
+  '讲解获取失败': { 'zh-TW': '講解獲取失敗', 'en': 'Failed to get explanation', 'ja': '解説の取得に失敗', 'ko': '설명을 가져오지 못했습니다' },
+  '讲解获取失败，请稍后再试': { 'zh-TW': '講解獲取失敗，請稍後再試', 'en': 'Failed to get explanation, please retry', 'ja': '解説の取得に失敗しました。後でもう一度お試しください', 'ko': '설명을 가져오지 못했습니다. 나중에 다시 시도하세요' },
+  '该功能为会员专属，开通会员': { 'zh-TW': '該功能為會員專屬，開通會員', 'en': 'This feature is for members only — upgrade', 'ja': 'この機能は会員限定です。アップグレードしてください', 'ko': '이 기능은 멤버 전용입니다. 멤버십에 가입하세요' },
+  '开通会员': { 'zh-TW': '開通會員', 'en': 'Upgrade', 'ja': 'アップグレード', 'ko': '멤버십 가입' },
+  'AI 跟读为会员功能，请开通会员': { 'zh-TW': 'AI 跟讀為會員功能，請開通會員', 'en': 'AI Shadowing is a member feature — please upgrade', 'ja': 'AIシャドーイングは会員機能です。アップグレードしてください', 'ko': 'AI 쉐도잉은 멤버 전용 기능입니다. 멤버십에 가입하세요' },
+  '评分失败，请重试': { 'zh-TW': '評分失敗，請重試', 'en': 'Scoring failed, please retry', 'ja': '採点に失敗しました。再試行してください', 'ko': '채점에 실패했습니다. 다시 시도하세요' },
+  '请先登录后再跟读': { 'zh-TW': '請先登入後再跟讀', 'en': 'Please log in before shadowing', 'ja': 'シャドーイング前にログインしてください', 'ko': '쉐도잉 전에 로그인하세요' },
+  'AI 正在讲解…': { 'zh-TW': 'AI 正在講解…', 'en': 'AI is explaining…', 'ja': 'AIが解説中…', 'ko': 'AI가 설명 중…' },
+  '评分中…': { 'zh-TW': '評分中…', 'en': 'Scoring…', 'ja': '採点中…', 'ko': '채점 중…' },
+  '集': { 'zh-TW': '集', 'en': 'Episodes', 'ja': 'エピソード', 'ko': '에피소드' },
+  '个播客': { 'zh-TW': '個播客', 'en': 'podcasts', 'ja': 'ポッドキャスト', 'ko': '팟캐스트' },
+  '播放完毕': { 'zh-TW': '播放完畢', 'en': 'Playback finished', 'ja': '再生終了', 'ko': '재생 완료' },
+  '关注': { 'zh-TW': '關注', 'en': 'Follow', 'ja': 'フォロー', 'ko': '팔로우' },
+  '已关注': { 'zh-TW': '已關注', 'en': 'Following', 'ja': 'フォロー中', 'ko': '팔로잉' },
+  '节目': { 'zh-TW': '節目', 'en': 'Episode', 'ja': 'エピソード', 'ko': '에피소드' },
+  '会员功能': { 'zh-TW': '會員功能', 'en': 'Member feature', 'ja': '会員機能', 'ko': '멤버 전용 기능' },
+  // ---- Toasts / misc ----
+  '已取消关注': { 'zh-TW': '已取消關注', 'en': 'Unfollowed', 'ja': 'フォロー解除', 'ko': '팔로우 취소됨' },
+  '已加入生词本：': { 'zh-TW': '已加入生字本：', 'en': 'Added to vocabulary: ', 'ja': '単語帳に追加しました：', 'ko': '단어장에 추가됨: ' },
+  '云端保存失败，已存到本地': { 'zh-TW': '雲端保存失敗，已存到本地', 'en': 'Cloud save failed, saved locally', 'ja': 'クラウド保存失敗、ローカルに保存しました', 'ko': '클라우드 저장 실패, 로컬에 저장됨' },
+  '笔记已保存': { 'zh-TW': '筆記已保存', 'en': 'Note saved', 'ja': 'ノートを保存しました', 'ko': '노트가 저장됨' },
+  '笔记已删除': { 'zh-TW': '筆記已刪除', 'en': 'Note deleted', 'ja': 'ノートを削除しました', 'ko': '노트가 삭제됨' },
+  '笔记已同步到云端': { 'zh-TW': '筆記已同步到雲端', 'en': 'Note synced to cloud', 'ja': 'ノートをクラウドに同期しました', 'ko': '노트가 클라우드에 동기화됨' },
+  '会员开通成功！': { 'zh-TW': '會員開通成功！', 'en': 'Membership activated!', 'ja': 'メンバーシップ開通成功！', 'ko': '멤버십 활성화 성공!' },
+  '当前浏览器不支持录音': { 'zh-TW': '當前瀏覽器不支援錄音', 'en': "Current browser doesn't support recording", 'ja': '現在のブラウザは録音に対応していません', 'ko': '현재 브라우저는 녹음을 지원하지 않습니다' },
+  '当前音频暂时无法播放，请稍后再试': { 'zh-TW': '當前音頻暫時無法播放，請稍後再試', 'en': "This audio can't play right now, please retry", 'ja': '現在この音声は再生できません。後ほどお試しください', 'ko': '현재 오디오를 재생할 수 없습니다. 나중에 다시 시도하세요' },
+  '请先在文稿中选择一句开始跟读': { 'zh-TW': '請先在文稿中選擇一句開始跟讀', 'en': 'Select a sentence in the transcript to start shadowing', 'ja': '文字起こしで文を選択してシャドーイングを始めてください', 'ko': '대본에서 문장을 선택해 쉐도잉을 시작하세요' },
+  '请先播放一个节目': { 'zh-TW': '請先播放一個節目', 'en': 'Play an episode first', 'ja': 'まずエピソードを再生してください', 'ko': '먼저 에피소드를 재생하세요' },
+  '该单词已在生词本中': { 'zh-TW': '該單字已在生字本中', 'en': 'This word is already in your vocabulary', 'ja': 'この単語はすでに単語帳にあります', 'ko': '이 단어는 이미 단어장에 있습니다' },
+  '无法访问麦克风，请允许录音权限': { 'zh-TW': '無法存取麥克風，請允許錄音權限', 'en': "Can't access microphone, please allow recording permission", 'ja': 'マイクにアクセスできません。録音権限を許可してください', 'ko': '마이크에 접근할 수 없습니다. 녹음 권한을 허용하세요' },
+  '显示语言': { 'zh-TW': '顯示語言', 'en': 'Display Language', 'ja': '表示言語', 'ko': '표시 언어' },
+  '翻译语言': { 'zh-TW': '翻譯語言', 'en': 'Translation Language', 'ja': '翻訳言語', 'ko': '번역 언어' },
+  '根据你选择的语言显示功能': { 'zh-TW': '根據你選擇的語言顯示功能', 'en': 'The language used to display features', 'ja': '選択した言語で機能を表示します', 'ko': '선택한 언어로 기능을 표시합니다' },
+  '根据你选择的语言显示翻译与讲解': { 'zh-TW': '根據你選擇的語言顯示翻譯與講解', 'en': 'The language used for translations and explanations', 'ja': '選択した言語で翻訳と解説を表示します', 'ko': '선택한 언어로 번역과 설명을 표시합니다' },
+  '显示语言已设置为：': { 'zh-TW': '顯示語言已設定為：', 'en': 'Display language set to: ', 'ja': '表示言語を設定しました：', 'ko': '표시 언어를 설정했습니다: ' },
+  '翻译语言已设置为：': { 'zh-TW': '翻譯語言已設定為：', 'en': 'Translation language set to: ', 'ja': '翻訳言語を設定しました：', 'ko': '번역 언어를 설정했습니다: ' },
+  '继续加油': { 'zh-TW': '繼續加油', 'en': 'Keep going', 'ja': 'がんばろう', 'ko': '계속 화이팅' },
+  // ---- Shadowing scores / tips ----
+  '优秀': { 'zh-TW': '優秀', 'en': 'Excellent', 'ja': '優秀', 'ko': '우수' },
+  '良好': { 'zh-TW': '良好', 'en': 'Good', 'ja': '良好', 'ko': '양호' },
+  '及格': { 'zh-TW': '及格', 'en': 'Pass', 'ja': '及格', 'ko': '합격' },
+  '多听几遍原句，先慢速跟读再加速。': { 'zh-TW': '多聽幾遍原句，先慢速跟讀再加速。', 'en': 'Listen to the original sentence a few times; shadow slowly first, then speed up.', 'ja': '原稿を何度か聞き、まずはゆっくりシャドーイングしてからスピードを上げましょう。', 'ko': '원문을 몇 번 듣고, 먼저 천천히 쉐도잉한 뒤 속도를 높이세요.' },
+  '整体不错，注意停顿与重音会更自然。': { 'zh-TW': '整體不錯，注意停頓與重音會更自然。', 'en': 'Pretty good overall — mind the pauses and stress for a more natural feel.', 'ja': '全体的に良いです。ポーズとアクセントに気をつけるとより自然になります。', 'ko': '전반적으로 좋습니다. 쉼표와 강세에 신경 쓰면 더 자연스러워집니다.' },
+  '试着跟原句节奏走，别太赶也别拖。': { 'zh-TW': '試著跟原句節奏走，別太趕也別拖。', 'en': "Try to follow the original rhythm — don't rush or drag.", 'ja': '原稿のリズムに合わせて。急ぎすぎず、引きずらず。', 'ko': '원문의 리듬을 따라가세요. 너무 빠르거나 느리지 않게.' },
+  '语速自然、连贯度很好，继续保持！': { 'zh-TW': '語速自然、連貫度很好，繼續保持！', 'en': 'Natural pace and great fluency — keep it up!', 'ja': '自然な話速で流暢さも素晴らしい。この調子で！', 'ko': '자연스러운 속도와 유창함이 훌륭합니다. 계속 유지하세요!' },
+  // ---- Categories ----
+  '新闻时事': { 'zh-TW': '新聞時事', 'en': 'News', 'ja': 'ニュース', 'ko': '뉴스' },
+  '科技': { 'zh-TW': '科技', 'en': 'Tech', 'ja': 'テクノロジー', 'ko': '기술' },
+  '商业': { 'zh-TW': '商業', 'en': 'Business', 'ja': 'ビジネス', 'ko': '비즈니스' },
+  '教育': { 'zh-TW': '教育', 'en': 'Education', 'ja': '教育', 'ko': '교육' },
+  '健康': { 'zh-TW': '健康', 'en': 'Health', 'ja': '健康', 'ko': '건강' },
+  '社会': { 'zh-TW': '社會', 'en': 'Society', 'ja': '社会', 'ko': '사회' },
+  '文化': { 'zh-TW': '文化', 'en': 'Culture', 'ja': '文化', 'ko': '문화' },
+  '科学': { 'zh-TW': '科學', 'en': 'Science', 'ja': '科学', 'ko': '과학' },
+  '体育': { 'zh-TW': '體育', 'en': 'Sports', 'ja': 'スポーツ', 'ko': '스포츠' },
+  '娱乐': { 'zh-TW': '娛樂', 'en': 'Entertainment', 'ja': 'エンタメ', 'ko': '엔터테인먼트' },
+  '故事': { 'zh-TW': '故事', 'en': 'Stories', 'ja': 'ストーリー', 'ko': '이야기' },
+  '未分类': { 'zh-TW': '未分類', 'en': 'Uncategorized', 'ja': '未分類', 'ko': '분류 없음' },
+  '未命名节目': { 'zh-TW': '未命名節目', 'en': 'Untitled Episode', 'ja': '無題のエピソード', 'ko': '제목 없음 에피소드' },
+  '未知作者': { 'zh-TW': '未知作者', 'en': 'Unknown Author', 'ja': '不明な作者', 'ko': '알 수 없는 작성자' },
+  '未知节目': { 'zh-TW': '未知節目', 'en': 'Unknown Episode', 'ja': '不明なエピソード', 'ko': '알 수 없는 에피소드' },
+  // ---- Difficulty ----
+  '初级': { 'zh-TW': '初級', 'en': 'Beginner', 'ja': '初級', 'ko': '초급' },
+  '中级': { 'zh-TW': '中級', 'en': 'Intermediate', 'ja': '中級', 'ko': '중급' },
+  '高级': { 'zh-TW': '高級', 'en': 'Advanced', 'ja': '上級', 'ko': '고급' },
+  // ---- Misc ----
+  '删除': { 'zh-TW': '刪除', 'en': 'Delete', 'ja': '削除', 'ko': '삭제' },
+};
+
+function t(key) {
+  const entry = I18N[key];
+  if (entry && entry[appLanguage]) return entry[appLanguage];
+  return key;
+}
+
+function getOwnText(el) {
+  let s = '';
+  for (const n of el.childNodes) {
+    if (n.nodeType === Node.TEXT_NODE) s += n.nodeValue;
+  }
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function setOwnText(el, text) {
+  const textNodes = [];
+  for (const n of el.childNodes) if (n.nodeType === Node.TEXT_NODE) textNodes.push(n);
+  if (textNodes.length === 0) { el.appendChild(document.createTextNode(text)); return; }
+  textNodes[0].nodeValue = text;
+  for (let i = 1; i < textNodes.length; i++) el.removeChild(textNodes[i]);
+}
+
+// Translate the whole document (or a subtree) into the current display language.
+// Safe to call repeatedly: original (Chinese) text is cached on each element,
+// and stale caches are re-anchored or cleared when an element's content is
+// replaced programmatically (e.g. the user button showing a username).
+function isConsistent(key, text) {
+  if (text === key) return true;
+  const entry = I18N[key];
+  if (!entry) return false;
+  for (const lang in entry) { if (entry[lang] === text) return true; }
+  return false;
+}
+
+function applyI18n(root) {
+  root = root || document.body;
+  // 1) Explicit data-i18n keys (used for dynamic / count-unit strings).
+  root.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (key) el.textContent = t(key);
+  });
+  // 2) Generic: translate any element whose own text is a known key,
+  //    plus translatable attributes (placeholder / title / aria-label).
+  root.querySelectorAll('*').forEach(el => {
+    if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'OPTION') return;
+    if (el.dataset.i18n) return; // handled above
+
+    ['placeholder', 'title', 'aria-label'].forEach(attr => {
+      if (!el.hasAttribute(attr)) return;
+      const dk = 'i18n' + attr.replace(/[^a-zA-Z]/g, '');
+      let val = el.getAttribute(attr);
+      let akey = el.dataset[dk];
+      if (akey === undefined || akey === '') {
+        if (I18N[val]) { akey = val; el.dataset[dk] = val; }
+        else { el.dataset[dk] = ''; return; }
+      }
+      if (!isConsistent(akey, val)) {
+        if (I18N[val]) { el.dataset[dk] = val; akey = val; }
+        else { el.dataset[dk] = ''; return; }
+      }
+      const tr = t(akey);
+      if (tr !== val) el.setAttribute(attr, tr);
+    });
+
+    const own = getOwnText(el);
+    if (!own) return;
+    let key = el.dataset.i18nOrig;
+    if (key === undefined || key === '') {
+      if (I18N[own]) { key = own; el.dataset.i18nOrig = own; }
+      else { el.dataset.i18nOrig = ''; return; }
+    }
+    if (!isConsistent(key, own)) {
+      if (I18N[own]) { el.dataset.i18nOrig = own; key = own; }
+      else { el.dataset.i18nOrig = ''; return; }
+    }
+    const tr = t(key);
+    if (tr !== own) setOwnText(el, tr);
+  });
+}
+
+function languageToast(key, name) {
+  const messages = {
+    'zh-CN': { app: '显示语言已设置为：', trans: '翻译语言已设置为：' },
+    'zh-TW': { app: '顯示語言已設定為：', trans: '翻譯語言已設定為：' },
+    'en': { app: 'Display language set to: ', trans: 'Translation language set to: ' },
+    'ja': { app: '表示言語を設定しました：', trans: '翻訳言語を設定しました：' },
+    'ko': { app: '표시 언어를 설정했습니다: ', trans: '번역 언어를 설정했습니다: ' },
+  };
+  const m = (messages[appLanguage] || messages['zh-CN'])[key];
+  showToast(m + name);
+}
+
+function getLanguageName(code) {
+  const lang = SUPPORTED_LANGUAGES.find(l => l.code === code);
+  return lang ? lang.native : code;
+}
+
+function renderLanguagePage() {
+  const appSelect = document.getElementById('appLanguageSelect');
+  const transSelect = document.getElementById('translationLanguageSelect');
+  if (!appSelect || !transSelect) return;
+  appSelect.value = appLanguage;
+  transSelect.value = translationLanguage;
+
+  appSelect.onchange = () => {
+    appLanguage = appSelect.value;
+    saveLanguageSettings();
+    renderLanguagePage();
+    languageToast('app', getLanguageName(appLanguage));
+  };
+  transSelect.onchange = () => {
+    translationLanguage = transSelect.value;
+    saveLanguageSettings();
+    languageToast('trans', getLanguageName(translationLanguage));
+  };
+}
+
+function changeAppLanguage(code) {
+  if (!SUPPORTED_LANGUAGES.some(l => l.code === code)) return;
+  appLanguage = code;
+  saveLanguageSettings();
+  renderLanguagePage();
+}
+
+function changeTranslationLanguage(code) {
+  if (!SUPPORTED_LANGUAGES.some(l => l.code === code)) return;
+  translationLanguage = code;
+  saveLanguageSettings();
+  renderLanguagePage();
+}

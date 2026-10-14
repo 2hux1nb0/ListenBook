@@ -1,18 +1,15 @@
 // ===== ListenLeap Admin Dashboard =====
-const API_BASE = (() => {
-  const host = window.location.hostname || 'localhost';
-  if (host === 'listenbook.local' || host === 'localhost' || host === '127.0.0.1') {
-    return `http://${host}:8000/api`;
-  }
-  return 'http://localhost:8000/api';
-})();
-const MEDIA_BASE = (() => {
-  const host = window.location.hostname || 'localhost';
-  if (host === 'listenbook.local' || host === 'localhost' || host === '127.0.0.1') {
-    return `http://${host}:8000`;
-  }
-  return 'http://localhost:8000';
-})();
+// Backend locations — keep in sync with js/api.js and studio/app.js.
+const PROD_BACKEND = 'https://piterju.pythonanywhere.com';
+const IS_LOCAL_DEV = ['localhost', '127.0.0.1', 'listenbook.local']
+  .includes(window.location.hostname || 'localhost');
+
+const API_BASE = IS_LOCAL_DEV
+  ? `http://${window.location.hostname || 'localhost'}:8000/api`
+  : `${PROD_BACKEND}/api`;
+const MEDIA_BASE = IS_LOCAL_DEV
+  ? `http://${window.location.hostname || 'localhost'}:8000`
+  : PROD_BACKEND;
 let currentPage = 'dashboard';
 let podcastsCache = [];
 let episodesCache = [];

@@ -12,7 +12,7 @@
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap"></noscript>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></noscript>
-  <link rel="stylesheet" href="css/app.css?v=20260726e">
+  <link rel="stylesheet" href="css/app.css?v=20261014b">
 </head>
 <body>
   <div id="app">
@@ -32,10 +32,6 @@
         <a href="#" class="sidebar-item active" data-page="home">
           <i class="fas fa-home"></i>
           <span class="sidebar-label">主页</span>
-        </a>
-        <a href="#" class="sidebar-item" data-page="categories">
-          <i class="fas fa-th-large"></i>
-          <span class="sidebar-label">精选分类</span>
         </a>
         <a href="#" class="sidebar-item" data-page="follow">
           <i class="far fa-bookmark"></i>
@@ -69,7 +65,7 @@
           <i class="fas fa-moon"></i>
           <span class="sidebar-label">主题切换</span>
         </a>
-        <a href="#" class="sidebar-item">
+        <a href="#" class="sidebar-item" data-page="language">
           <i class="fas fa-globe"></i>
           <span class="sidebar-label">语言设置</span>
         </a>
@@ -320,34 +316,80 @@
 
       <!-- Detail View -->
       <div id="detailView" class="view">
-        <div class="detail-container">
-          <div class="detail-left">
-            <button class="back-btn" id="backBtn" onclick="goBack()">
+        <div class="reader-container">
+          <!-- 左栏：播客卡片 + 剧集列表 -->
+          <aside class="reader-side">
+            <button class="back-btn" id="backBtn">
               <i class="fas fa-arrow-left"></i>
               <span>返回</span>
             </button>
-            <div class="detail-cover">
-              <img id="detailCover" src="" alt="">
-            </div>
-            <div class="detail-info">
-              <h1 class="detail-title" id="detailTitle"></h1>
-              <div class="detail-meta">
-                <span class="detail-author" id="detailAuthor"><i class="fas fa-user"></i> </span>
-                <span class="detail-episodes" id="detailEpisodes"><i class="fas fa-list"></i> </span>
-                <span class="detail-category" id="detailCategories"><i class="fas fa-tag"></i> </span>
+            <div class="reader-card">
+              <div class="detail-cover">
+                <img id="detailCover" src="" alt="">
               </div>
-              <div class="detail-level" id="detailLevel"></div>
-              <p class="detail-desc" id="detailDesc"></p>
-              <button class="favorite-btn" id="favoriteBtn">
-                <i class="far fa-bookmark"></i>
-                <span>关注</span>
-              </button>
+              <div class="detail-info">
+                <h1 class="detail-title" id="detailTitle"></h1>
+                <div class="detail-meta">
+                  <span class="detail-author" id="detailAuthor"><i class="fas fa-user"></i> </span>
+                  <span class="detail-episodes" id="detailEpisodes"><i class="fas fa-list"></i> </span>
+                </div>
+                <div class="detail-level" id="detailLevel"></div>
+                <p class="detail-desc" id="detailDesc"></p>
+                <button class="favorite-btn" id="favoriteBtn">
+                  <i class="far fa-bookmark"></i>
+                  <span>关注</span>
+                </button>
+              </div>
             </div>
-          </div>
-          <div class="detail-right">
-            <h3 class="episodes-title">播客列表</h3>
+            <div class="reader-side-head">
+              <span>剧集列表</span>
+              <span class="reader-side-count" id="detailCategories"></span>
+            </div>
             <div class="episodes-list" id="episodesList"></div>
-          </div>
+          </aside>
+
+          <!-- 右栏：播放器 + 实时字幕 -->
+          <main class="reader-main">
+            <div class="reader-bar">
+              <div class="reader-bar-now">
+                <span class="reader-bar-label">正在播放</span>
+                <span class="reader-bar-title" id="readerNowTitle">尚未选择剧集</span>
+              </div>
+              <div class="reader-bar-tools">
+                <label class="reader-tool">
+                  <span>水平</span>
+                  <select id="readerLevel">
+                    <option value="cet4">大学英语四级</option>
+                    <option value="cet6">大学英语六级</option>
+                    <option value="kaoyan">考研英语</option>
+                    <option value="ielts">雅思 IELTS</option>
+                    <option value="toefl">托福 TOEFL</option>
+                  </select>
+                </label>
+                <button class="reader-toggle active" id="readerZhToggle" title="显示/隐藏单词中文">
+                  <i class="fas fa-language"></i> 中文
+                </button>
+                <div class="reader-modes">
+                  <button class="reader-mode active" data-mode="bilingual">双语</button>
+                  <button class="reader-mode" data-mode="en">英文</button>
+                  <button class="reader-mode" data-mode="zh">中文</button>
+                </div>
+              </div>
+            </div>
+            <div class="reader-legend" id="readerLegend">
+              <span class="reader-legend-item"><i class="reader-dot syll"></i>本级考纲词</span>
+              <span class="reader-legend-item"><i class="reader-dot beyond"></i>超纲生词</span>
+              <span class="reader-legend-hint">点单词可看完整释义</span>
+            </div>
+            <div class="reader-scroll" id="readerScroll">
+              <div class="reader-placeholder" id="readerPlaceholder">
+                <i class="fas fa-headphones"></i>
+                <p>从左侧选一集开始播放</p>
+                <span>播放时字幕会跟随语音逐句高亮，生词按你选的水平自动标注中文</span>
+              </div>
+              <div class="transcript-body reader-body" id="readerTranscript" style="display:none"></div>
+            </div>
+          </main>
         </div>
       </div>
 
@@ -392,6 +434,48 @@
           <p class="empty-hint">在文稿中点击任意单词即可加入生词本</p>
         </div>
       </div>
+
+      <!-- Language Settings View -->
+      <div id="languageView" class="view">
+        <div class="language-settings-card">
+          <h1 class="language-settings-title">语言设置</h1>
+
+          <div class="language-setting-row">
+            <div class="language-setting-labels">
+              <span class="language-setting-name">显示语言</span>
+              <span class="language-setting-hint">根据你选择的语言显示功能</span>
+            </div>
+            <div class="language-select-wrap" id="appLanguageSelectWrap">
+              <select class="language-select" id="appLanguageSelect">
+                <option value="zh-CN">简体中文</option>
+                <option value="zh-TW">繁體中文</option>
+                <option value="en">English</option>
+                <option value="ja">日本語</option>
+                <option value="ko">한국어</option>
+              </select>
+              <i class="fas fa-chevron-down language-select-arrow"></i>
+            </div>
+          </div>
+
+          <div class="language-setting-row">
+            <div class="language-setting-labels">
+              <span class="language-setting-name">翻译语言</span>
+              <span class="language-setting-hint">根据你选择的语言显示翻译与讲解</span>
+            </div>
+            <div class="language-select-wrap" id="translationLanguageSelectWrap">
+              <select class="language-select" id="translationLanguageSelect">
+                <option value="zh-CN">简体中文</option>
+                <option value="zh-TW">繁體中文</option>
+                <option value="en">English</option>
+                <option value="ja">日本語</option>
+                <option value="ko">한국어</option>
+              </select>
+              <i class="fas fa-chevron-down language-select-arrow"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </main>
 
     <!-- Footer -->
@@ -624,7 +708,11 @@
 
     <!-- Word Popover -->
     <div class="word-popover" id="wordPopover" style="display:none">
-      <div class="word-popover-word" id="wordPopoverWord"></div>
+      <div class="word-popover-head">
+        <div class="word-popover-word" id="wordPopoverWord"></div>
+        <div class="word-popover-tags" id="wordPopoverTags"></div>
+      </div>
+      <div class="word-popover-gloss" id="wordPopoverGloss"></div>
       <div class="word-popover-actions">
         <button class="word-popover-btn" id="wordAddBtn"><i class="fas fa-plus"></i> 加入生词本</button>
         <button class="word-popover-btn" id="wordExplainBtn"><i class="fas fa-brain"></i> AI 讲解</button>
@@ -634,8 +722,9 @@
 
   </div>
 
-  <script src="js/data.js?v=20260726e"></script>
-  <script src="js/api.js?v=20260726e"></script>
-  <script src="js/app.js?v=20260726e"></script>
+  <script src="js/data.js?v=20260726t"></script>
+  <script src="js/api.js?v=20260726t"></script>
+  <script src="js/dict.js?v=20261014b"></script>
+  <script src="js/app.js?v=20261014b"></script>
 </body>
 </html>

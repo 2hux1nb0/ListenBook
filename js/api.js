@@ -1,19 +1,19 @@
 // ===== ListenBook API Client =====
 
-const API_BASE = (() => {
-  const host = window.location.hostname || 'localhost';
-  if (host === 'listenbook.local' || host === 'localhost' || host === '127.0.0.1') {
-    return `http://${host}:8000/api`;
-  }
-  return 'http://localhost:8000/api';
-})();
-const MEDIA_BASE = (() => {
-  const host = window.location.hostname || 'localhost';
-  if (host === 'listenbook.local' || host === 'localhost' || host === '127.0.0.1') {
-    return `http://${host}:8000`;
-  }
-  return 'http://localhost:8000';
-})();
+// Backend locations.
+//  * Local development -> the Django dev server on port 8000.
+//  * Deployed (Cloudflare Pages) -> the Django backend hosted for free on
+//    PythonAnywhere. Keep this in sync with admin/admin.js and studio/app.js.
+const PROD_BACKEND = 'https://piterju.pythonanywhere.com';
+const IS_LOCAL_DEV = ['localhost', '127.0.0.1', 'listenbook.local']
+  .includes(window.location.hostname || 'localhost');
+
+const API_BASE = IS_LOCAL_DEV
+  ? `http://${window.location.hostname || 'localhost'}:8000/api`
+  : `${PROD_BACKEND}/api`;
+const MEDIA_BASE = IS_LOCAL_DEV
+  ? `http://${window.location.hostname || 'localhost'}:8000`
+  : PROD_BACKEND;
 
 function resolveMediaUrl(value) {
   if (!value) return 'https://picsum.photos/seed/default/200/200';
@@ -24,6 +24,19 @@ function resolveMediaUrl(value) {
 }
 
 // API 请求封装
+// Parse a JSON response, tolerating empty bodies (e.g. 204 No Content)
+// so callers like DELETE /favorites/ don't throw "Unexpected end of JSON input".
+async function parseBody(response) {
+  if (response.status === 204) return null;
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return null;
+  }
+}
+
 async function apiRequest(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
   const token = localStorage.getItem('access_token');
@@ -50,7 +63,7 @@ async function apiRequest(endpoint, options = {}) {
       if (refreshResult) {
         config.headers['Authorization'] = `Bearer ${localStorage.getItem('access_token')}`;
         const retryResponse = await fetch(url, config);
-        return await retryResponse.json();
+        return await parseBody(retryResponse);
       } else {
         // 刷新失败，清除登录状态
         logout();
@@ -59,11 +72,12 @@ async function apiRequest(endpoint, options = {}) {
     }
     
     if (!response.ok) {
-      const error = await response.json();
+      let error;
+      try { error = await response.json(); } catch { error = { detail: `请求失败 (${response.status})` }; }
       throw error;
     }
     
-    return await response.json();
+    return await parseBody(response);
   } catch (error) {
     console.error('API Error:', error);
     throw error;

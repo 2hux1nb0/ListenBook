@@ -5,7 +5,11 @@
 ═══════════════════════════════════════════════════════════════ */
 
 // ─── Helpers ────────────────────────────────────────────────
-const BASE = ''; // Same-origin: /api, /admin, etc. already rooted
+// Backend base URL — keep in sync with js/api.js and admin/admin.js.
+const PROD_BACKEND = 'https://piterju.pythonanywhere.com';
+const IS_LOCAL_DEV = ['localhost', '127.0.0.1', 'listenbook.local']
+  .includes(window.location.hostname || 'localhost');
+const BASE = IS_LOCAL_DEV ? 'http://localhost:8000' : PROD_BACKEND;
 
 function esc(str) {
   if (str == null) return '';
@@ -20,8 +24,8 @@ function esc(str) {
 function resolveMediaUrl(val) {
   if (!val) return null;
   if (val.startsWith('http')) return val;
-  if (val.startsWith('/media/')) return val;
-  return '/media/' + val;
+  if (val.startsWith('/media/')) return BASE + val;
+  return BASE + '/media/' + val;
 }
 
 function durationFmt(seconds) {
@@ -431,7 +435,7 @@ async function loadDashboard() {
     const valEl = card.querySelector('.stat-value');
     if (valEl) {
       if (i === 3) {
-        valEl.innerHTML = '<a href="/admin/accounts/user/" target="_blank" class="stat-link">查看 →</a>';
+        valEl.innerHTML = '<a href="' + BASE + '/admin/accounts/user/" target="_blank" class="stat-link">查看 →</a>';
       } else {
         valEl.textContent = statVals[i];
       }
@@ -489,7 +493,7 @@ function renderRecentPodcasts(el, podcasts) {
   el.innerHTML = `<div class="recent-list">${podcasts.map(p => `
     <div class="recent-item">
       <img class="recent-cover"
-           src="${esc(resolveMediaUrl(p.cover_image) || '')}"
+           src="${esc(resolveMediaUrl(p.cover_url || p.cover_image) || '')}"
            alt="${esc(p.title)}"
            onerror="this.style.display='none'">
       <div class="recent-info">
@@ -520,7 +524,7 @@ function setupPodcasts() {
     const preview = document.getElementById('podcast-cover-preview');
     const placeholder = document.getElementById('podcast-cover-placeholder');
     if (url && (url.startsWith('http') || url.startsWith('/'))) {
-      preview.src = url.startsWith('http') ? url : url;
+      preview.src = resolveMediaUrl(url);
       preview.style.display = 'block';
       placeholder.style.display = 'none';
       preview.onerror = () => { preview.style.display = 'none'; placeholder.style.display = 'flex'; };
@@ -583,7 +587,7 @@ function renderPodcastsTable() {
   tbody.innerHTML = filtered.map(p => `
     <tr data-id="${p.id}">
       <td>
-        <img class="cell-cover" src="${esc(resolveMediaUrl(p.cover_image) || '')}" alt="${esc(p.title)}" onerror="this.style.display='none'; this.outerHTML='<div class=cell-cover style=display:flex;align-items:center;justify-content:center><i class=\\'fa-solid fa-podcast\\' style=\\'color:var(--text-tertiary);font-size:14px\\'></i></div>'">
+        <img class="cell-cover" src="${esc(resolveMediaUrl(p.cover_url || p.cover_image) || '')}" alt="${esc(p.title)}" onerror="this.style.display='none'; this.outerHTML='<div class=cell-cover style=display:flex;align-items:center;justify-content:center><i class=\\'fa-solid fa-podcast\\' style=\\'color:var(--text-tertiary);font-size:14px\\'></i></div>'">
       </td>
       <td><span class="cell-title" title="${esc(p.title)}">${esc(p.title)}</span></td>
       <td class="cell-text">${esc(p.author || '—')}</td>
@@ -708,8 +712,9 @@ function openPodcastModal(podcast = null) {
     document.getElementById('podcast-featured').checked = !!podcast.is_featured;
     document.getElementById('podcast-active').checked = podcast.is_active !== false;
 
-    if (podcast.cover_image) {
-      const url = resolveMediaUrl(podcast.cover_image);
+    const coverSrc = podcast.cover_url || podcast.cover_image;
+    if (coverSrc) {
+      const url = resolveMediaUrl(coverSrc);
       document.getElementById('podcast-cover-url').value = url;
       document.getElementById('podcast-cover-preview').src = url;
       document.getElementById('podcast-cover-preview').style.display = 'block';
@@ -763,7 +768,7 @@ async function submitPodcastForm(submitBtn) {
       title, author, description,
       category, difficulty, language,
       is_featured, is_active,
-      cover_image: coverUrl || null,
+      cover_url: coverUrl || '',
     };
 
     let saved;

@@ -9,6 +9,6 @@ class PlayHistorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PlayHistory
-        fields = ['id', 'episode', 'episode_title', 'podcast_title',
+        fields = ['id', 'episode', 'episode_title', 'podcast_title', 'podcast_id',
                   'current_position', 'duration', 'is_completed', 'last_played']
         read_only_fields = ['id', 'last_played']

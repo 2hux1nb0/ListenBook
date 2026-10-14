@@ -42,3 +42,28 @@ yarn-error.log
 .env
 .env.local
 *.pem
+
+# Cloudflare deploy (local token + temp screenshots)
+.cf_deploy/
+.deploy_tmp/
+
+# Crawler
+.venv-crawler/
+crawler/config.json
+crawler/cache/
+crawler/logs/
+crawler/candidates.json
+
+# Handover doc (contains live credentials -- never commit)
+HANDOVER.md
+
+# Scratch: ECDICT download + dict build working files (70MB, rebuildable)
+_wip/
+
+# wrangler local state / one-off preview artefacts
+.wrangler/
+language_settings_preview.png
+
+# User recordings / one-off audio captures (runtime data, not source)
+backend/media/shadowing/
+rec_*.wav

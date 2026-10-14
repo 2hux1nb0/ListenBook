@@ -5,9 +5,11 @@ Run: python3 manage.py shell < seed_data.py
 import os
 import sys
 import django
+import wave as _wave
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 django.setup()
+from django.conf import settings
 
 from django.contrib.auth import get_user_model
 from podcasts.models import Category, Podcast
@@ -219,6 +221,30 @@ print(f'   Podcasts: {Podcast.objects.count()}')
 print(f'   Episodes: {Episode.objects.count()}')
 print(f'\n   Admin login: admin / admin123456')
 print(f'   Test login: testuser / test123')
+
+# ---------------------------------------------------------------------------
+# Attach a REAL English speech WAV as fallback audio for every episode.
+# This guarantees the player, transcript sync and shadowing always have
+# genuine, playable audio to work with (no synthetic/fake playback).
+# ---------------------------------------------------------------------------
+AUDIO_REL = 'episodes/audio/seed-fallback.wav'
+audio_full = os.path.join(settings.MEDIA_ROOT, AUDIO_REL)
+real_duration = 120
+if os.path.exists(audio_full):
+    try:
+        with _wave.open(audio_full, 'rb') as wf:
+            real_duration = int(wf.getnframes() / wf.getframerate())
+    except Exception:
+        pass
+
+attached = 0
+for ep in Episode.objects.all():
+    if not ep.audio_file and not ep.audio_url:
+        ep.audio_file = AUDIO_REL
+        ep.audio_duration = real_duration
+        ep.save(update_fields=['audio_file', 'audio_duration'])
+        attached += 1
+print(f'✅ Attached real fallback audio ({AUDIO_REL}, {real_duration}s) to {attached} episode(s)')
 
 # ---------------------------------------------------------------------------
 # Membership tiers

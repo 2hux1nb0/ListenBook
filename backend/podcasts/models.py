@@ -37,6 +37,8 @@ class Podcast(models.Model):
     author = models.CharField(max_length=200, blank=True, default='')
     description = models.TextField(blank=True, default='')
     cover_image = models.ImageField(upload_to='podcasts/covers/', blank=True, null=True)
+    # 外部封面直链（爬虫抓的官方专辑图）。前端优先用它，省去转存和带宽。
+    cover_url = models.URLField(max_length=600, blank=True, default='')
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='podcasts')
     difficulty = models.CharField(max_length=20, choices=DIFFICULTY_CHOICES, default='intermediate')
     content_type = models.CharField(max_length=20, choices=CONTENT_TYPE_CHOICES, default='audio')

@@ -17,7 +17,8 @@ class WordSerializer(serializers.ModelSerializer):
 class WordCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Word
-        fields = ['term', 'pronunciation', 'pos', 'definition', 'example', 'source', 'episode']
+        fields = ['id', 'term', 'pronunciation', 'pos', 'definition', 'example', 'source', 'episode']
+        read_only_fields = ['id']
 
     def validate_term(self, value):
         return value.strip().lower()

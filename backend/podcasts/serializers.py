@@ -16,6 +16,7 @@ class PodcastListSerializer(serializers.ModelSerializer):
         model = Podcast
         fields = [
             'id', 'title', 'slug', 'author', 'description', 'cover_image',
+            'cover_url',
             'category', 'category_name', 'difficulty', 'language',
             'is_featured', 'is_active', 'episode_count', 'episode_count_display',
             'subscriber_count', 'avg_rating', 'created_at',
